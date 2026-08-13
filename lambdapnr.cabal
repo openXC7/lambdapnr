@@ -21,8 +21,11 @@ library
   hs-source-dirs:   src
   exposed-modules:
     Lambdapnr.Arch.Ecp5
+    Lambdapnr.Arch.Ecp5.BaseConfigs
     Lambdapnr.Arch.Ecp5.Binding
+    Lambdapnr.Arch.Ecp5.Bitgen
     Lambdapnr.Arch.Ecp5.CellTiming
+    Lambdapnr.Arch.Ecp5.Config
     Lambdapnr.Arch.Ecp5.Chipdb
     Lambdapnr.Arch.Ecp5.ConstIds
     Lambdapnr.Arch.Ecp5.Types
@@ -78,6 +81,7 @@ test-suite lambdapnr-test
     Lambdapnr.Arch.Ecp5BindingTest
     Lambdapnr.CliSemanticsTest
     Lambdapnr.CliTest
+    Lambdapnr.ConfigTest
     Lambdapnr.JsonFrontendTest
     Lambdapnr.Arch.Ecp5Test
     Lambdapnr.Kernel.ChecksumTest

@@ -20,6 +20,8 @@ import System.Exit (ExitCode (..), exitSuccess, exitWith)
 import System.IO (hPutStrLn, stderr)
 
 import Lambdapnr.Arch.Ecp5
+import Lambdapnr.Arch.Ecp5.Bitgen (buildConfig)
+import Lambdapnr.Arch.Ecp5.Config (renderChipConfig)
 import Lambdapnr.Arch.Ecp5.Types (eaDevice)
 import Lambdapnr.CLI (Command (..), applyGeneralOpts, checkSingleDevice, ecp5ArgsFromOpts, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
 import Lambdapnr.Kernel.Arch (getChipName)
@@ -84,7 +86,13 @@ runFlow prog opts = case checkSingleDevice opts of
                                                 Left err -> die prog err
                                                 Right d -> do
                                                     reportDesign prog jsonFile d
-                                                    die prog "packing not yet implemented"
+                                                    case lookup "textcfg" opts of
+                                                        Just (Just cfgFile) -> do
+                                                            let cc = buildConfig arch d
+                                                            TIO.writeFile cfgFile (renderChipConfig cc)
+                                                            hPutStrLn stderr (prog ++ ": wrote text config to " ++ cfgFile)
+                                                            die prog "packing not yet implemented"
+                                                        _ -> die prog "packing not yet implemented"
                                         _ -> die prog "no JSON design file specified"
 
 die :: String -> String -> IO a
