@@ -1,0 +1,69 @@
+cabal-version:      3.0
+name:               lambdapnr
+version:            0.1.0.0
+synopsis:           lambdapnr — a Haskell FPGA place-and-route tool
+description:
+  Bit-compatible reimplementation of the nextpnr kernel and algorithms in
+  Haskell, targeting maximum parallelism and high performance. See
+  SPECIFICATION.md for the architecture extraction and port design.
+license:            ISC
+author:             nextpnr-haskell contributors
+maintainer:         nextpnr-haskell contributors
+build-type:         Simple
+
+common warnings
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates
+               -Wincomplete-uni-patterns -Wmissing-export-lists
+               -Wpartial-fields -Wredundant-constraints
+
+library
+  import:           warnings
+  hs-source-dirs:   src
+  exposed-modules:
+    Lambdapnr.Kernel.Arch
+    Lambdapnr.Kernel.Checksum
+    Lambdapnr.Kernel.Context
+    Lambdapnr.Kernel.Delay
+    Lambdapnr.Kernel.DeterministicRng
+    Lambdapnr.Kernel.HashTable
+    Lambdapnr.Kernel.IdString
+    Lambdapnr.Kernel.Netlist
+    Lambdapnr.Kernel.Property
+  build-depends:
+    base >=4.17 && <5,
+    containers,
+    text,
+    vector
+  default-language: Haskell2010
+
+executable lambdapnr
+  import:           warnings
+  hs-source-dirs:   app
+  main-is:          Main.hs
+  build-depends:
+    base,
+    lambdapnr,
+    text
+  default-language: Haskell2010
+
+test-suite lambdapnr-test
+  import:           warnings
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Main.hs
+  other-modules:
+    Lambdapnr.Kernel.ChecksumTest
+    Lambdapnr.Kernel.DelayTest
+    Lambdapnr.Kernel.DeterministicRngTest
+    Lambdapnr.Kernel.IdStringTest
+    Lambdapnr.Kernel.NetlistTest
+    Lambdapnr.Kernel.PropertyTest
+  build-depends:
+    base,
+    containers,
+    lambdapnr,
+    tasty,
+    tasty-hunit,
+    text,
+    vector
+  default-language: Haskell2010

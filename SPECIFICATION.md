@@ -522,9 +522,9 @@ safety or where moves are independent.
 ### 7.1 Package layout
 
 ```
-nextpnr-haskell/
-  nextpnr.cabal / cabal.project
-  src/Nextpnr/
+lambdapnr/
+  lambdapnr.cabal / cabal.project
+  src/Lambdapnr/
     Kernel/            -- mirror of common/kernel
       IdString.hs      -- interned ids; IORef table; IdStringList
       Property.hs      -- variant values, JSON codec
@@ -645,7 +645,7 @@ sequential merge, or `Par` with `IVar`s joined in index order. Never use
    symmetry, buckets) — it is the cheapest full-chipdb validator.
 5. Every C++ unit test in §6 gets a Haskell twin in `test/`; regressions stay
    runnable against the Haskell binary via the same Makefiles (drop-in
-   `NPNR=nextpnr-haskell-generic`).
+   `NPNR=lambdapnr-generic`).
 
 ### 7.6 Risk register
 

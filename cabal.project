@@ -1,0 +1,5 @@
+packages: .
+
+-- Performance-focused compilation for the port's kernels
+package lambdapnr
+  ghc-options: -O2
