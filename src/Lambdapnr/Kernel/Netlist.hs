@@ -24,6 +24,10 @@ module Lambdapnr.Kernel.Netlist (
     addNet,
     connectPort,
     disconnectPort,
+    setCellBel,
+    clearCellBel,
+    setNetWire,
+    removeNetWire,
     strengthToInt,
 ) where
 
@@ -54,6 +58,36 @@ data PlaceStrength
 
 strengthToInt :: PlaceStrength -> Int
 strengthToInt = fromEnum
+
+-- | Bind a cell to a bel (@cell->bel = bel@, @cell->belStrength@).
+setCellBel :: IdString -> bel -> PlaceStrength -> Design bel wire pip -> Design bel wire pip
+setCellBel cell bel strength d =
+    case M.lookup cell (designCells d) of
+        Nothing -> d
+        Just ci -> d{designCells = M.insert cell (ci{cellBel = Just bel, cellBelStrength = strength}) (designCells d)}
+
+-- | Clear a cell's bel binding (@cell->bel = BelId()@).
+clearCellBel :: IdString -> Design bel wire pip -> Design bel wire pip
+clearCellBel cell d =
+    case M.lookup cell (designCells d) of
+        Nothing -> d
+        Just ci -> d{designCells = M.insert cell (ci{cellBel = Nothing, cellBelStrength = StrengthNone}) (designCells d)}
+
+{- | Insert (or replace) a wire entry in a net's wires map, mirroring
+@net->wires[wire] = {pip, strength}@.
+-}
+setNetWire :: (Ord wire) => IdString -> wire -> Maybe pip -> PlaceStrength -> Design bel wire pip -> Design bel wire pip
+setNetWire net wire pip strength d =
+    case M.lookup net (designNets d) of
+        Nothing -> d
+        Just ni -> d{designNets = M.insert net (ni{netWires = M.insert wire (PipMap pip strength) (netWires ni)}) (designNets d)}
+
+-- | Remove a wire from a net's wires map (@net->wires.erase(wire)@).
+removeNetWire :: (Ord wire) => IdString -> wire -> Design bel wire pip -> Design bel wire pip
+removeNetWire net wire d =
+    case M.lookup net (designNets d) of
+        Nothing -> d
+        Just ni -> d{designNets = M.insert net (ni{netWires = M.delete wire (netWires ni)}) (designNets d)}
 
 {- | Port direction. The 'Enum' order matches the C++ @PortType@
 (@PORT_IN = 0, PORT_OUT = 1, PORT_INOUT = 2@) — it is part of the

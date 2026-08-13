@@ -18,6 +18,9 @@ module Lambdapnr.Arch.Ecp5
   , loadEcp5
   , ecp5Chipdb
   , ecp5Args
+  , ecp5Bind
+  , setEcp5Bind
+  , ecp5TimingDb
   , tileIndex
   , tileXY
   , locTypeOfTile
@@ -39,13 +42,16 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import System.IO.Unsafe (unsafePerformIO)
 
+import Lambdapnr.Arch.Ecp5.Binding (BindState (..), boundBelCell, boundPipNet, boundWireNet, emptyBindState, wireFanoutOf)
+import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..), getCellDelayFor, getPortClockingInfoFor, getPortTimingClassFor)
 import Lambdapnr.Arch.Ecp5.Chipdb
 import Lambdapnr.Arch.Ecp5.ConstIds
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), Ecp5Args (..), Ecp5Device (..), GroupId, Location (..), PipId (..), SpeedGrade (..), WireId (..), deviceName, locAdd, speedToInt)
 import Lambdapnr.Kernel.Arch hiding (locX, locY, locZ)
 import Lambdapnr.Kernel.Delay
 import Lambdapnr.Kernel.IdString
-import Lambdapnr.Kernel.Netlist (PortDir (..))
+import Lambdapnr.Kernel.Netlist (CellInfo (..), PortDir (..))
+import Lambdapnr.Kernel.Timing (TimingClockingInfo, TimingPortClass)
 
 -- | The ECP5 architecture instance: chipdb + args + interned name ids.
 data Ecp5 = Ecp5
@@ -54,10 +60,12 @@ data Ecp5 = Ecp5
   , e5IdTable :: IdTable
   , e5ConstIds :: !(V.Vector IdString) -- ^ ids 0..constIdCount-1 (index = chipdb index)
   , e5ConstIdByName :: !(M.Map Text IdString) -- ^ constid name -> id
+  , e5ConstIdIdx :: !(M.Map IdString Int) -- ^ constid id -> chipdb index (timing DB lookups)
   , e5XIds :: !(V.Vector IdString) -- ^ "0".."width-1"
   , e5YIds :: !(V.Vector IdString)
   , e5BelNameIds :: !(M.Map Text IdString) -- ^ bel basename -> id
   , e5WireNameIds :: !(M.Map Text IdString)
+  , e5Bind :: !BindState
   }
 
 ecp5Chipdb :: Ecp5 -> Chipdb
@@ -66,29 +74,26 @@ ecp5Chipdb = e5Chipdb
 ecp5Args :: Ecp5 -> Ecp5Args
 ecp5Args = e5Args
 
--- | @tile_index@: tile id = y * width + x.
-tileIndex :: Chipdb -> Location -> Int
-tileIndex cd (Location x y) = fromIntegral y * cdWidth cd + fromIntegral x
+-- | The binding maps (bel/cell, wire/net, pip/net, wire fanout).
+ecp5Bind :: Ecp5 -> BindState
+ecp5Bind = e5Bind
 
--- | @tileXY@: location of tile id.
-tileXY :: Chipdb -> Int -> Location
-tileXY cd t = Location (fromIntegral (t `mod` cdWidth cd)) (fromIntegral (t `div` cdWidth cd))
+-- | Install updated binding maps (the bind/unbind operations in
+-- 'Lambdapnr.Arch.Ecp5.Binding' return a 'BindState'; this puts it
+-- back into the arch record).
+setEcp5Bind :: BindState -> Ecp5 -> Ecp5
+setEcp5Bind bs e = e{e5Bind = bs}
 
--- | The location type of a tile.
-locTypeOfTile :: Chipdb -> Int -> LocationType
-locTypeOfTile cd t = cdLocations cd V.! (cdLocationType cd V.! t)
-
--- | Bel data for a bel id.
-belAt :: Chipdb -> BelId -> BelInfo
-belAt cd b = ltBels (locTypeOfTile cd (tileIndex cd (belLoc b))) V.! fromIntegral (belIdx b)
-
--- | Wire data for a wire id.
-wireAt :: Chipdb -> WireId -> WireInfo
-wireAt cd w = ltWires (locTypeOfTile cd (tileIndex cd (wireLoc w))) V.! fromIntegral (wireIdx w)
-
--- | Pip data for a pip id.
-pipAt :: Chipdb -> PipId -> PipInfo
-pipAt cd p = ltPips (locTypeOfTile cd (tileIndex cd (pipLoc p))) V.! fromIntegral (pipIdx p)
+-- | The timing-database view (cell timings of the selected speed grade
+-- + constid tables).
+ecp5TimingDb :: Ecp5 -> TimingDb
+ecp5TimingDb e =
+    TimingDb
+        { tdIdTable = e5IdTable e
+        , tdConstIdIndex = e5ConstIdIdx e
+        , tdConstIdByName = e5ConstIdByName e
+        , tdSpeedGrade = cdSpeedGrades (e5Chipdb e) V.! speedToInt (eaSpeed (e5Args e))
+        }
 
 -- | Load the architecture: parse the blob, intern names, build the id
 -- maps. Returns the arch with a *fresh* id table (share it with the
@@ -131,6 +136,7 @@ buildEcp5 args cd = do
       )
   constIds <- V.mapM (intern tbl) constidNames
   let constIdByName = M.fromList (zip (V.toList constidNames) (V.toList constIds))
+      constIdIdx = M.fromList (zip (V.toList constIds) [0 ..])
   -- 2. x/y coordinate ids
   xIds <- V.mapM (intern tbl) (V.generate (cdWidth cd) (T.pack . show))
   yIds <- V.mapM (intern tbl) (V.generate (cdHeight cd) (T.pack . show))
@@ -146,10 +152,12 @@ buildEcp5 args cd = do
       , e5IdTable = tbl
       , e5ConstIds = constIds
       , e5ConstIdByName = constIdByName
+      , e5ConstIdIdx = constIdIdx
       , e5XIds = xIds
       , e5YIds = yIds
       , e5BelNameIds = belNames
       , e5WireNameIds = wireNames
+      , e5Bind = emptyBindState
       }
 
 internTileNames :: IdTable -> Chipdb -> (LocationType -> V.Vector a) -> (a -> Text) -> IO (M.Map Text IdString)
@@ -234,9 +242,9 @@ instance Arch Ecp5 where
   getBelChecksum _ b = fromIntegral (belIdx b)
   getBelGlobalBuf e b = getBelType e b == M.findWithDefault (IdString 0) "DCCA" (e5ConstIdByName e)
   getBelHidden _ _ = False
-  checkBelAvail _ _ = True
-  getBoundBelCell _ _ = Nothing
-  getConflictingBelCell _ _ = Nothing
+  checkBelAvail e b = not (M.member b (bsBel2Cell (e5Bind e)))
+  getBoundBelCell e b = boundBelCell b (e5Bind e)
+  getConflictingBelCell e b = boundBelCell b (e5Bind e)
 
   -- Wires ---------------------------------------------------------------
   getWires e =
@@ -276,8 +284,8 @@ instance Arch Ecp5 where
       )
     | bp <- V.toList (wiBelPins (wireAt (e5Chipdb e) w))
     ]
-  checkWireAvail _ _ = True
-  getBoundWireNet _ _ = Nothing
+  checkWireAvail e w = not (M.member w (bsWire2Net (e5Bind e)))
+  getBoundWireNet e w = boundWireNet w (e5Bind e)
 
   -- Pips ----------------------------------------------------------------
   getPips e =
@@ -307,8 +315,12 @@ instance Arch Ecp5 where
     let cd = e5Chipdb e
         pi = pipAt cd p
         cls = sgPipClasses (cdSpeedGrades cd V.! speedToInt (eaSpeed (e5Args e))) V.! fromIntegral (piTimingClass pi)
-        -- fanout of the source wire: 0 until binding state lands
-     in dqScalar (fromIntegral (pdMinBase cls)) (fromIntegral (pdMaxBase cls))
+        -- C++: delay = base + fanout * adder, with the fanout of the
+        -- pip's source wire (number of bound pips leaving it)
+        fanout = wireFanoutOf (getPipSrcWire e p) (e5Bind e)
+     in dqScalar
+          (fromIntegral (pdMinBase cls) + fromIntegral fanout * fromIntegral (pdMinFanout cls))
+          (fromIntegral (pdMaxBase cls) + fromIntegral fanout * fromIntegral (pdMaxFanout cls))
   getPipSrcWire e p =
     let pi = pipAt (e5Chipdb e) p
      in WireId
@@ -324,9 +336,8 @@ instance Arch Ecp5 where
   getPipLocation e p =
     Loc (fromIntegral (locX (pipLoc p))) (fromIntegral (locY (pipLoc p))) 0
   isPipInverting _ _ = False
-  checkPipAvail _ _ = True
-  checkPipAvailForNet _ _ _ = True
-  getBoundPipNet _ _ = Nothing
+  checkPipAvail e p = not (M.member p (bsPip2Net (e5Bind e)))
+  getBoundPipNet e p = boundPipNet p (e5Bind e)
 
   -- Delay model ---------------------------------------------------------
   predictDelay e srcB _srcPin dstB _dstPin =
@@ -362,17 +373,17 @@ instance Arch Ecp5 where
   getBelBucketForBel e b = getBelType e b
   getBelsInBucket e bucket = [b | b <- getBels e, getBelBucketForBel e b == bucket]
 
+  -- Cell timing -----------------------------------------------------------
+  getCellDelay e cell from to = getCellDelayFor (ecp5TimingDb e) cell from to
+  getPortTimingClass e cell port = getPortTimingClassFor (ecp5TimingDb e) cell port
+  getPortClockingInfo e cell port idx = getPortClockingInfoFor (ecp5TimingDb e) cell port idx
+
   pack _ = pure False
   place _ = pure False
   route _ = pure False
 
 -- ---------------------------------------------------------------------------
 -- helpers
-
--- | A DelayQuad with the same min/max pair on rise and fall (the C++
--- @DelayQuad(min, max)@ constructor).
-dqScalar :: DelayT -> DelayT -> DelayQuad
-dqScalar mn mx = DelayQuad (DelayPair mn mx) (DelayPair mn mx)
 
 -- | Constid id for a chipdb index.
 constId :: Ecp5 -> Int32 -> IdString

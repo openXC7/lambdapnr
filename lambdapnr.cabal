@@ -21,6 +21,8 @@ library
   hs-source-dirs:   src
   exposed-modules:
     Lambdapnr.Arch.Ecp5
+    Lambdapnr.Arch.Ecp5.Binding
+    Lambdapnr.Arch.Ecp5.CellTiming
     Lambdapnr.Arch.Ecp5.Chipdb
     Lambdapnr.Arch.Ecp5.ConstIds
     Lambdapnr.Arch.Ecp5.Types
@@ -33,6 +35,7 @@ library
     Lambdapnr.Kernel.IdString
     Lambdapnr.Kernel.Netlist
     Lambdapnr.Kernel.Property
+    Lambdapnr.Kernel.Timing
   build-depends:
     base >=4.17 && <5,
     bytestring,
@@ -63,6 +66,7 @@ test-suite lambdapnr-test
   main-is:          Main.hs
   other-modules:
     ZzProbeTest
+    Lambdapnr.Arch.Ecp5BindingTest
     Lambdapnr.Arch.Ecp5Test
     Lambdapnr.Kernel.ChecksumTest
     Lambdapnr.Kernel.DelayTest

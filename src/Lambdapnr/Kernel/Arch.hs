@@ -19,9 +19,10 @@ module Lambdapnr.Kernel.Arch (
 import Data.Text (Text)
 import Data.Word (Word32)
 
-import Lambdapnr.Kernel.Delay (DelayQuad, DelayT)
+import Lambdapnr.Kernel.Delay (DelayPair, DelayQuad, DelayT, dpFromDelay, dqFromDelay)
 import Lambdapnr.Kernel.IdString (IdString (..), IdStringList)
-import Lambdapnr.Kernel.Netlist (PlaceStrength, PortDir, PortRef)
+import Lambdapnr.Kernel.Netlist (CellInfo, PlaceStrength, PortDir, PortRef)
+import Lambdapnr.Kernel.Timing (ClockEdge (..), TimingClockingInfo (..), TimingPortClass (..))
 
 -- | Tile coordinate.
 data Loc = Loc
@@ -130,6 +131,20 @@ class Arch a where
     getBelBucketForBel :: a -> Bel a -> IdString
     getBelsInBucket :: a -> IdString -> [Bel a]
 
+    -- Cell timing ---------------------------------------------------------
+
+    {- | Combinational delay of a cell arc, if the cell has one. The C++
+    @getCellDelay@ returns false for register arcs (those are
+    clock-to-Q, reported via 'getPortClockingInfo').
+    -}
+    getCellDelay :: a -> CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> IdString -> Maybe DelayQuad
+
+    -- | Timing class of a cell port + number of associated clocks.
+    getPortTimingClass :: a -> CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> (TimingPortClass, Int)
+
+    -- | Clocking information (setup/hold/clock-to-Q) of a register port.
+    getPortClockingInfo :: a -> CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> Int -> TimingClockingInfo
+
     -- Flow ----------------------------------------------------------------
     pack :: a -> IO Bool
     place :: a -> IO Bool
@@ -158,6 +173,17 @@ class Arch a where
     getBelBucketForCellType _ t = t
     getBelBucketForBel a b = getBelBucketForCellType a (getBelType a b)
     getBelsInBucket a b = filter (\bel -> getBelBucketForBel a bel == b) (getBels a)
+    -- @BaseArch@ defaults: no combinational arcs, all ports ignored, and
+    -- an empty clocking info record.
+    getCellDelay _ _ _ _ = Nothing
+    getPortTimingClass _ _ _ = (TmgIgnore, 0)
+    getPortClockingInfo _ _ _ _ =
+        TimingClockingInfo
+            emptyIdString
+            RisingEdge
+            (dpFromDelay 0)
+            (dpFromDelay 0)
+            (dqFromDelay 0)
     pack _ = pure False
     place _ = pure False
     route _ = pure False

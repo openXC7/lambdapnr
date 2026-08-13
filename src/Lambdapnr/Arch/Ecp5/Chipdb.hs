@@ -25,6 +25,12 @@ module Lambdapnr.Arch.Ecp5.Chipdb
   , CellSetupHold (..)
   , PipDelay (..)
   , parseChipdb
+  , tileIndex
+  , tileXY
+  , locTypeOfTile
+  , belAt
+  , wireAt
+  , pipAt
   ) where
 
 import Control.Monad (unless, when)
@@ -37,6 +43,8 @@ import Data.Text.Encoding (decodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
 import qualified Data.Vector as V
 import Data.Word (Word8)
+
+import Lambdapnr.Arch.Ecp5.Types (BelId (..), Location (..), PipId (..), WireId (..))
 
 -- | A parsed chipdb.
 data Chipdb = Chipdb
@@ -188,6 +196,33 @@ data SpeedGrade = SpeedGrade
   , sgPipClasses :: !(V.Vector PipDelay)
   }
   deriving (Eq, Show)
+
+-- ---------------------------------------------------------------------------
+-- Chipdb accessors (shared by the arch instance and the binding ops).
+
+-- | @tile_index@: tile id = y * width + x.
+tileIndex :: Chipdb -> Location -> Int
+tileIndex cd (Location x y) = fromIntegral y * cdWidth cd + fromIntegral x
+
+-- | @tileXY@: location of tile id.
+tileXY :: Chipdb -> Int -> Location
+tileXY cd t = Location (fromIntegral (t `mod` cdWidth cd)) (fromIntegral (t `div` cdWidth cd))
+
+-- | The location type of a tile.
+locTypeOfTile :: Chipdb -> Int -> LocationType
+locTypeOfTile cd t = cdLocations cd V.! (cdLocationType cd V.! t)
+
+-- | Bel data for a bel id.
+belAt :: Chipdb -> BelId -> BelInfo
+belAt cd b = ltBels (locTypeOfTile cd (tileIndex cd (belLoc b))) V.! fromIntegral (belIdx b)
+
+-- | Wire data for a wire id.
+wireAt :: Chipdb -> WireId -> WireInfo
+wireAt cd w = ltWires (locTypeOfTile cd (tileIndex cd (wireLoc w))) V.! fromIntegral (wireIdx w)
+
+-- | Pip data for a pip id.
+pipAt :: Chipdb -> PipId -> PipInfo
+pipAt cd p = ltPips (locTypeOfTile cd (tileIndex cd (pipLoc p))) V.! fromIntegral (pipIdx p)
 
 -- ---------------------------------------------------------------------------
 -- Little-endian field readers over a strict ByteString at absolute offsets.

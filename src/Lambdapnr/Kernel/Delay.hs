@@ -12,6 +12,7 @@ module Lambdapnr.Kernel.Delay (
     DelayQuad (..),
     dpFromDelay,
     dqFromDelay,
+    dqScalar,
     dqMinDelay,
     dqMaxDelay,
     dqDelayPair,
@@ -47,6 +48,11 @@ dpFromDelay d = DelayPair d d
 
 dqFromDelay :: DelayT -> DelayQuad
 dqFromDelay d = DelayQuad (dpFromDelay d) (dpFromDelay d)
+
+-- | A DelayQuad with the same min/max pair on rise and fall (the C++
+-- @DelayQuad(min, max)@ constructor).
+dqScalar :: DelayT -> DelayT -> DelayQuad
+dqScalar mn mx = DelayQuad (DelayPair mn mx) (DelayPair mn mx)
 
 dqMinDelay :: DelayQuad -> DelayT
 dqMinDelay q = min (dpMin (dqRise q)) (dpMin (dqFall q))
