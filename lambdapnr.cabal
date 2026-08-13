@@ -20,6 +20,10 @@ library
   import:           warnings
   hs-source-dirs:   src
   exposed-modules:
+    Lambdapnr.Arch.Ecp5
+    Lambdapnr.Arch.Ecp5.Chipdb
+    Lambdapnr.Arch.Ecp5.ConstIds
+    Lambdapnr.Arch.Ecp5.Types
     Lambdapnr.Kernel.Arch
     Lambdapnr.Kernel.Checksum
     Lambdapnr.Kernel.Context
@@ -31,9 +35,12 @@ library
     Lambdapnr.Kernel.Property
   build-depends:
     base >=4.17 && <5,
+    bytestring,
     containers,
     text,
     vector
+  data-files:
+    data/ecp5/chipdb-25k.bin
   default-language: Haskell2010
 
 executable lambdapnr
@@ -49,9 +56,14 @@ executable lambdapnr
 test-suite lambdapnr-test
   import:           warnings
   type:             exitcode-stdio-1.0
+  -- -M2G: hard heap cap so a regression can never OOM the machine again
+  -- (the parser used to allocate tens of GB from a corrupt slice count)
+  ghc-options:      -rtsopts -with-rtsopts=-M2G
   hs-source-dirs:   test
   main-is:          Main.hs
   other-modules:
+    ZzProbeTest
+    Lambdapnr.Arch.Ecp5Test
     Lambdapnr.Kernel.ChecksumTest
     Lambdapnr.Kernel.DelayTest
     Lambdapnr.Kernel.DeterministicRngTest
@@ -60,6 +72,7 @@ test-suite lambdapnr-test
     Lambdapnr.Kernel.PropertyTest
   build-depends:
     base,
+    bytestring,
     containers,
     lambdapnr,
     tasty,

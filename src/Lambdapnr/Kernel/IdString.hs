@@ -26,11 +26,12 @@ module Lambdapnr.Kernel.IdString (
 ) where
 
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IM
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Vector as V
 import System.IO.Unsafe (unsafePerformIO)
 
 -- | An interned string: a table index.
@@ -44,14 +45,17 @@ type IdStringList = [IdString]
 emptyId :: IdString
 emptyId = IdString 0
 
--- | Per-context interning table.
-data IdTable = IdTable (IORef (Map Text Int, V.Vector Text))
+-- | Per-context interning table. Both directions live in one 'IORef' so
+-- every update is a single atomic swap; the index side is an 'IntMap'
+-- (a growable vector would need O(n) copies per append during bulk
+-- loading of chipdb names).
+data IdTable = IdTable (IORef (Map Text Int, IntMap Text))
 
 {- | Create a fresh table; @""@ is interned as index 0, matching the C++
 @BaseCtx@ constructor.
 -}
 newIdTable :: IO IdTable
-newIdTable = IdTable <$> newIORef (M.singleton T.empty 0, V.singleton T.empty)
+newIdTable = IdTable <$> newIORef (M.singleton T.empty 0, IM.singleton 0 T.empty)
 
 -- | Intern a string, returning its (stable) index. Idempotent.
 intern :: IdTable -> Text -> IO IdString
@@ -60,7 +64,7 @@ intern (IdTable ref) t = atomicModifyIORef' ref $ \(m, v) ->
         Just i -> ((m, v), IdString i)
         Nothing ->
             let i = M.size m
-             in ((M.insert t i m, V.snoc v t), IdString i)
+             in ((M.insert t i m, IM.insert i t v), IdString i)
 
 -- | 'intern' over 'String'.
 internStr :: IdTable -> String -> IO IdString
@@ -71,7 +75,7 @@ idToText :: IdTable -> IdString -> Text
 idToText (IdTable ref) (IdString i) =
     unsafePerformIO $ do
         (_, v) <- readIORef ref
-        pure (v V.! i)
+        pure (maybe T.empty id (IM.lookup i v))
 
 -- | 'idToText' over 'String'.
 idToStr :: IdTable -> IdString -> String

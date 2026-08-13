@@ -3,6 +3,8 @@ module Main (main) where
 
 import Test.Tasty (defaultMain, testGroup)
 
+import Lambdapnr.Arch.Ecp5Test (ecp5Tests)
+import ZzProbeTest (zzProbe)
 import Lambdapnr.Kernel.ChecksumTest (checksumTests)
 import Lambdapnr.Kernel.DelayTest (delayTests)
 import Lambdapnr.Kernel.DeterministicRngTest (rngTests)
@@ -12,13 +14,15 @@ import Lambdapnr.Kernel.PropertyTest (propertyTests)
 
 main :: IO ()
 main =
-    defaultMain $
-        testGroup
-            "nextpnr-haskell kernel"
-            [ rngTests
-            , idStringTests
-            , propertyTests
-            , delayTests
-            , netlistTests
-            , checksumTests
-            ]
+  defaultMain $
+    testGroup
+      "lambdapnr"
+      [ zzProbe
+      , ecp5Tests
+      , rngTests
+      , idStringTests
+      , propertyTests
+      , delayTests
+      , netlistTests
+      , checksumTests
+      ]
