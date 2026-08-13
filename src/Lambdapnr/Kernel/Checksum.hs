@@ -51,15 +51,9 @@ propStr :: Property -> Text
 propStr (PropNum s _) = s
 propStr (PropStr s) = s
 
-{- | Per-net checksum fold, mirroring the C++ loop:
-  x = 123456789
-  x = xs32(x + xs32(net_key.index))
-  x = xs32(x + xs32(ni.name.index))
-  if (driver.cell) x = xs32(x + xs32(driver.cell.name.index))
-  x = xs32(x + xs32(driver.port.index))
-  for each user:  [cell name index if present] port index
-  attrs:  xs32(x + xs32(sum over attrs))
-  wires:  xs32(x + xs32(sum over wires))
+{- | Per-net checksum fold, mirroring the C++ loop exactly: every raw
+index enters as @xs32(x + xs32(index))@, the users chain into @x@
+directly (order matters), and the attrs/wires are separate sums.
 -}
 checksumNet ::
     (wire -> Word32) ->
@@ -67,21 +61,25 @@ checksumNet ::
     NetInfo bel wire pip ->
     Word32
 checksumNet wireCk pipCk ni =
-    let x1 = xorshift32 (123456789 + hashIndex (netName ni)) -- net key
-        x2 = xorshift32 (x1 + hashIndex (netName ni)) -- ni.name
-        x3 = maybe x2 (\c -> xorshift32 (x2 + hashIndex c)) (prCell (netDriver ni))
-        x4 = xorshift32 (x3 + hashIndex (prPort (netDriver ni)))
-        x5 = xorshift32 (x4 + checksumUsers (netUsers ni))
-        x6 = xorshift32 (x5 + checksumAttrs (netAttrs ni))
-     in xorshift32 (x6 + checksumWires wireCk pipCk (netWires ni))
+    let x1 = xorshift32 (123456789 + xorshift32 (hashIndex (netName ni))) -- net key
+        x2 = xorshift32 (x1 + xorshift32 (hashIndex (netName ni))) -- ni.name
+        x3 = maybe x2 (\c -> xorshift32 (x2 + xorshift32 (hashIndex c))) (prCell (netDriver ni))
+        x4 = xorshift32 (x3 + xorshift32 (hashIndex (prPort (netDriver ni))))
+        x5 = V.foldl' (\acc u -> maybe acc (step acc) u) x4 (netUsers ni)
+        x6 = xorshift32 (x5 + xorshift32 (checksumAttrs (netAttrs ni)))
+     in xorshift32 (x6 + xorshift32 (checksumWires wireCk pipCk (netWires ni)))
+  where
+    step acc u =
+        let a = maybe acc (\c -> xorshift32 (acc + xorshift32 (hashIndex c))) (prCell u)
+         in xorshift32 (a + xorshift32 (hashIndex (prPort u)))
 
 checksumUsers :: Vector PortRef -> Word32
 checksumUsers users =
     foldl' step 0 users
   where
     step acc u =
-        let a = maybe acc (\c -> xorshift32 (acc + hashIndex c)) (prCell u)
-         in xorshift32 (a + hashIndex (prPort u))
+        let a = maybe acc (\c -> xorshift32 (acc + xorshift32 (hashIndex c))) (prCell u)
+         in xorshift32 (a + xorshift32 (hashIndex (prPort u)))
 
 {- | C++ pattern:
   attr_x_sum = 0
@@ -97,8 +95,8 @@ checksumAttrs attrs =
   where
     attrX k v =
         foldl'
-            (\acc c -> xorshift32 (acc + hashChar c))
-            (xorshift32 (123456789 + hashIndex k))
+            (\acc c -> xorshift32 (acc + xorshift32 (hashChar c)))
+            (xorshift32 (123456789 + xorshift32 (hashIndex k)))
             (T.unpack (propStr v))
 
 {- | C++ pattern:
@@ -114,43 +112,38 @@ checksumWires wireCk pipCk wires =
     foldl' (\acc (w, pm) -> acc + wireX w pm) 0 (M.toList wires)
   where
     wireX w pm =
-        let a = xorshift32 (123456789 + wireCk w)
-            b = xorshift32 (a + maybe 0 pipCk (pmPip pm))
-         in xorshift32 (b + fromIntegral (strengthToInt (pmStrength pm)))
+        let a = xorshift32 (123456789 + xorshift32 (wireCk w))
+            -- the default (unbound) pip has index -1, like BelId/WireId
+            b = xorshift32 (a + xorshift32 (maybe 0xFFFFFFFF pipCk (pmPip pm)))
+         in xorshift32 (b + xorshift32 (fromIntegral (strengthToInt (pmStrength pm))))
 
-{- | Per-cell checksum fold, mirroring the C++ loop:
-  x = 123456789
-  x = xs32(x + xs32(cell_key.index))
-  x = xs32(x + xs32(ci.name.index))
-  x = xs32(x + xs32(ci.type.index))
-  ports: xs32(x + xs32(port_x_sum))   (same pattern as attrs)
-  attrs, params: same
-  x = xs32(x + xs32(belChecksum(bel)))
-  x = xs32(x + xs32(belStrength))
+{- | Per-cell checksum fold, mirroring the C++ loop exactly: every raw
+index enters as @xs32(x + xs32(index))@; ports, attrs and params are
+separate sums.
 -}
 checksumCell ::
     (bel -> Word32) ->
     CellInfo bel wire pip ->
     Word32
 checksumCell belCk ci =
-    let x1 = xorshift32 (123456789 + hashIndex (cellName ci)) -- cell key
-        x2 = xorshift32 (x1 + hashIndex (cellName ci)) -- ci.name
-        x3 = xorshift32 (x2 + hashIndex (cellType ci))
-        x4 = xorshift32 (x3 + checksumPorts (cellPorts ci))
-        x5 = xorshift32 (x4 + checksumAttrs (cellAttrs ci))
-        x6 = xorshift32 (x5 + checksumAttrs (cellParams ci))
-        x7 = xorshift32 (x6 + maybe 0 belCk (cellBel ci))
-     in xorshift32 (x7 + fromIntegral (strengthToInt (cellBelStrength ci)))
+    let x1 = xorshift32 (123456789 + xorshift32 (hashIndex (cellName ci))) -- cell key
+        x2 = xorshift32 (x1 + xorshift32 (hashIndex (cellName ci))) -- ci.name
+        x3 = xorshift32 (x2 + xorshift32 (hashIndex (cellType ci)))
+        x4 = xorshift32 (x3 + xorshift32 (checksumPorts (cellPorts ci)))
+        x5 = xorshift32 (x4 + xorshift32 (checksumAttrs (cellAttrs ci)))
+        x6 = xorshift32 (x5 + xorshift32 (checksumAttrs (cellParams ci)))
+        x7 = xorshift32 (x6 + xorshift32 (maybe 0xFFFFFFFF belCk (cellBel ci)))
+     in xorshift32 (x7 + xorshift32 (fromIntegral (strengthToInt (cellBelStrength ci))))
 
 checksumPorts :: Map IdString PortInfo -> Word32
 checksumPorts ports =
     foldl' (\acc (k, p) -> acc + portX k p) 0 (M.toList ports)
   where
     portX k p =
-        let a = xorshift32 (123456789 + hashIndex k)
-            b = xorshift32 (a + hashIndex (portName p))
-            c = maybe b (\n -> xorshift32 (b + hashIndex n)) (portNet p)
-         in xorshift32 (c + fromIntegral (fromEnum (portType p)))
+        let a = xorshift32 (123456789 + xorshift32 (hashIndex k))
+            b = xorshift32 (a + xorshift32 (hashIndex (portName p)))
+            c = maybe b (\n -> xorshift32 (b + xorshift32 (hashIndex n))) (portNet p)
+         in xorshift32 (c + xorshift32 (fromIntegral (fromEnum (portType p))))
 
 {- | Whole-design checksum:
   cksum = xs32(123456789)

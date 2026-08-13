@@ -23,6 +23,7 @@ module Lambdapnr.Kernel.IdString (
     idToStr,
     idFromIndex,
     emptyId,
+    tableSlice,
 ) where
 
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
@@ -76,6 +77,7 @@ idToText (IdTable ref) (IdString i) =
     unsafePerformIO $ do
         (_, v) <- readIORef ref
         pure (maybe T.empty id (IM.lookup i v))
+{-# NOINLINE idToText #-}
 
 -- | 'idToText' over 'String'.
 idToStr :: IdTable -> IdString -> String
@@ -86,3 +88,9 @@ that stores pre-interned indices).
 -}
 idFromIndex :: Int -> IdString
 idFromIndex = IdString
+
+-- | TEMPORARY debug: dump table entries in an index range as text.
+tableSlice :: IdTable -> Int -> Int -> IO [String]
+tableSlice (IdTable ref) lo hi = do
+    (_, v) <- readIORef ref
+    pure [T.unpack (IM.findWithDefault (T.pack "<missing>") i v) | i <- [lo .. hi]]

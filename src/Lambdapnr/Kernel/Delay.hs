@@ -10,6 +10,7 @@ module Lambdapnr.Kernel.Delay (
     DelayT,
     DelayPair (..),
     DelayQuad (..),
+    ClockConstraint (..),
     dpFromDelay,
     dqFromDelay,
     dqScalar,
@@ -40,6 +41,15 @@ data DelayPair = DelayPair
 data DelayQuad = DelayQuad
     { dqRise :: !DelayPair
     , dqFall :: !DelayPair
+    }
+    deriving (Eq, Show)
+
+-- | A clock constraint: high/low/period delay pairs (the C++
+-- @ClockConstraint@).
+data ClockConstraint = ClockConstraint
+    { ccLow :: !DelayPair
+    , ccHigh :: !DelayPair
+    , ccPeriod :: !DelayPair
     }
     deriving (Eq, Show)
 

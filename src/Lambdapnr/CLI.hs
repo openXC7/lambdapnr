@@ -87,6 +87,7 @@ generalOptions =
     , flag 'V' "version" "show version"
     , nflag "test" "check architecture database integrity"
     , narg "freq" "set target frequency for design in MHz"
+    , narg "slack_redist_iter" "number of iterations between slack redistribution"
     , nflag "timing-allow-fail" "allow timing to fail in design"
     , nflag "no-tmdriv" "disable timing-driven placement"
     , narg "sdc" "Generic timing constraints SDC file to load"
@@ -370,69 +371,117 @@ numeric properties like the C++.
 -}
 applyGeneralOpts :: Ecp5Args -> [(String, Maybe String)] -> Context arch -> IO (Either String (Context arch))
 applyGeneralOpts args opts ctx0 = do
-    r1 <- foldM applyOne (Right ctx0) opts
+    -- createContext (ecp5 main.cc): intern arch.package / arch.speed
+    -- BEFORE anything else (the interning ORDER matters: the checksum
+    -- hashes id indices, so it must match the C++ exactly)
+    ctx1 <- setSetting ctx0 "arch.package" (propFromString (eaPackage args))
+    ctx2 <- setSetting ctx1 "arch.speed" (propFromString (T.pack (speedString (eaSpeed args))))
+    -- setupContext first line: settings.find(id("seed"))
+    ctx3 <- setSetting ctx2 "seed" (propFromInt (fromIntegral (rngState (ctxRng ctx2))) 64)
+    -- flag section in the C++ setupContext order (NOT command-line order)
+    r1 <- foldM applyOne (Right ctx3) flagOrder
     case r1 of
         Left err -> pure (Left err)
-        Right ctx1 -> Right <$> applyDefaults ctx1
+        Right ctx4 -> Right <$> applyDefaults ctx4
   where
+    -- the C++ setupContext processing order (0.10)
+    flagOrder =
+        [ "seed"
+        , "threads"
+        , "slack_redist_iter"
+        , "ignore-loops"
+        , "ignore-rel-clk"
+        , "timing-allow-fail"
+        , "placer"
+        , "router"
+        , "cstrweight"
+        , "starttemp"
+        , "freq"
+        , "no-tmdriv"
+        , "placer-heap-alpha"
+        , "placer-heap-beta"
+        , "placer-heap-critexp"
+        , "placer-heap-timingweight"
+        , "placer-heap-cell-placement-timeout"
+        , "placer-heap-no-ctrl-set"
+        , "parallel-refine"
+        , "router2-heatmap"
+        , "tmg-ripup"
+        , "router2-tmg-ripup"
+        , "router2-alt-weights"
+        , "static-dump-density"
+        ]
+    val :: String -> Maybe String
+    val n = lookup n opts >>= id
+
     applyOne (Left err) _ = pure (Left err)
-    applyOne (Right ctx) (name, val) = case name of
-        "seed" -> case val of
+    applyOne (Right ctx) name
+        | name `notElem` map fst opts = pure (Right ctx) -- C++ skips absent flags
+        | otherwise = case name of
+        "seed" -> case val "seed" of
             Just s -> case reads s of
                 [(n, "")] -> pure (Right ctx{ctxRng = rngSeed (fromIntegral n) (ctxRng ctx)})
                 _ -> pure (Left ("invalid seed '" ++ s ++ "'"))
-            Nothing -> pure (Left "option '--seed' requires an argument")
+            Nothing -> pure (Right ctx) -- no --seed flag: nothing to do
         "randomize-seed" -> do
             n <- randomSeed
             putStrLn ("Generated random seed: " ++ show n)
             pure (Right ctx{ctxRng = rngSeed (fromIntegral n) (ctxRng ctx)})
-        "threads" -> setNum "threads" ctx val
+        "threads" -> setNum "threads" ctx (val "threads")
+        "slack_redist_iter" -> do
+            r <- setNum "slack_redist_iter" ctx (val "slack_redist_iter")
+            case r of
+                Left err -> pure (Left err)
+                Right ctx'
+                    | Just f <- val "freq" >>= readMaybeDouble
+                    , f == 0 -> setBool "auto_freq" ctx'
+                    | otherwise -> pure (Right ctx')
         "ignore-loops" -> setBool "timing/ignoreLoops" ctx
         "ignore-rel-clk" -> setBool "timing/ignoreRelClk" ctx
         "timing-allow-fail" -> setBool "timing/allowFail" ctx
         "placer" -> do
-            case val of
+            case val "placer" of
                 Just p
                     | p `elem` availablePlacers -> setStr "placer" ctx p
                     | otherwise ->
                         pure (Left ("Placer algorithm '" ++ p ++ "' is not supported (available options: " ++ intercalate ", " availablePlacers ++ ")"))
-                Nothing -> pure (Left "option '--placer' requires an argument")
+                Nothing -> pure (Right ctx)
         "router" -> do
-            case val of
+            case val "router" of
                 Just r
                     | r `elem` availableRouters -> setStr "router" ctx r
                     | otherwise ->
                         pure (Left ("Router algorithm '" ++ r ++ "' is not supported (available options: " ++ intercalate ", " availableRouters ++ ")"))
-                Nothing -> pure (Left "option '--router' requires an argument")
-        "cstrweight" -> setStrF "placer1/constraintWeight" ctx val
-        "starttemp" -> setStrF "placer1/startTemp" ctx val
-        "freq" -> case val >>= readMaybeDouble of
+                Nothing -> pure (Right ctx)
+        "cstrweight" -> setStrF "placer1/constraintWeight" ctx (val "cstrweight")
+        "starttemp" -> setStrF "placer1/startTemp" ctx (val "starttemp")
+        "freq" -> case val "freq" >>= readMaybeDouble of
             Just f | f > 0 -> setStr "target_freq" ctx (show (f * 1e6))
-            _ -> pure (Left "invalid --freq value")
+            _ -> pure (Right ctx)
         "no-tmdriv" -> setBoolFalse "timing_driven" ctx
-        "placer-heap-alpha" -> setStrF "placerHeap/alpha" ctx val
-        "placer-heap-beta" -> setStrF "placerHeap/beta" ctx val
-        "placer-heap-critexp" -> case val of
+        "placer-heap-alpha" -> setStrF "placerHeap/alpha" ctx (val "placer-heap-alpha")
+        "placer-heap-beta" -> setStrF "placerHeap/beta" ctx (val "placer-heap-beta")
+        "placer-heap-critexp" -> case val "placer-heap-critexp" of
             Just v -> setStr "placerHeap/criticalityExponent" ctx v
-            Nothing -> pure (Left "option '--placer-heap-critexp' requires an argument")
-        "placer-heap-timingweight" -> case val of
+            Nothing -> pure (Right ctx)
+        "placer-heap-timingweight" -> case val "placer-heap-timingweight" of
             Just v -> setStr "placerHeap/timingWeight" ctx v
-            Nothing -> pure (Left "option '--placer-heap-timingweight' requires an argument")
-        "placer-heap-cell-placement-timeout" -> case val >>= readMaybeInt of
+            Nothing -> pure (Right ctx)
+        "placer-heap-cell-placement-timeout" -> case val "placer-heap-cell-placement-timeout" >>= readMaybeInt of
             Just n -> setStr "placerHeap/cellPlacementTimeout" ctx (show (max 0 n))
-            _ -> pure (Left "invalid --placer-heap-cell-placement-timeout value")
+            _ -> pure (Right ctx)
         "placer-heap-no-ctrl-set" -> setBool "placerHeap/noCtrlSet" ctx
         "parallel-refine" -> setBool "placerHeap/parallelRefine" ctx
-        "router2-heatmap" -> case val of
+        "router2-heatmap" -> case val "router2-heatmap" of
             Just v -> setStr "router2/heatmap" ctx v
-            Nothing -> pure (Left "option '--router2-heatmap' requires an argument")
+            Nothing -> pure (Right ctx)
         "tmg-ripup" -> setBool "router/tmg_ripup" ctx
         "router2-tmg-ripup" -> setBool "router/tmg_ripup" ctx
         "router2-alt-weights" -> setBool "router2/alt-weights" ctx
         "static-dump-density" -> setBool "static/dump_density" ctx
-        "top" -> case val of
+        "top" -> case val "top" of
             Just v -> setStr "frontend/top" ctx v
-            Nothing -> pure (Left "option '--top' requires an argument")
+            Nothing -> pure (Right ctx)
         "no-promote-globals" -> setBool "arch.no-promote-globals" ctx
         "out-of-context" -> setBool "arch.ooc" ctx
         -- accepted, no-op until the corresponding machinery lands:
@@ -445,21 +494,22 @@ applyGeneralOpts args opts ctx0 = do
         -- allow-fabric-eclk, 12k..um5g-85k (device handled above)
         _ -> pure (Right ctx)
 
-    -- defaults, mirroring the tail of setupContext + createContext: only
-    -- set when absent, so user options win
+    -- defaults, mirroring the tail of setupContext: only set when
+    -- absent, so user options win. placer/router are constids in the
+    -- chipdb (no table growth); ARCHNAME is interned by archId().
     applyDefaults :: Context arch -> IO (Context arch)
     applyDefaults ctx =
         foldM setDefault ctx
-            [ ("arch.package", propFromString (eaPackage args))
-            , ("arch.speed", propFromString (T.pack (speedString (eaSpeed args))))
-            , ("arch.name", propFromString "ecp5")
-            , ("arch.type", propFromString (T.pack (deviceTypeName (eaDevice args))))
-            , ("seed", propFromInt (fromIntegral (rngState (ctxRng ctx))) 64)
-            , ("target_freq", propFromString "1.2e7")
+            [ ("target_freq", propFromString "1.2e7")
             , ("timing_driven", propTrue)
+            , ("slack_redist_iter", propFromInt 0 64)
             , ("auto_freq", propFalse)
             , ("placer", propFromString "heap")
             , ("router", propFromString "router1")
+            , ("ARCHNAME", propFromString "ecp5")
+            , ("arch.name", propFromString "ecp5")
+            , ("arch.type", propFromString (T.pack (deviceTypeName (eaDevice args))))
+            , ("seed", propFromInt (fromIntegral (rngState (ctxRng ctx))) 64)
             , ("placerHeap/alpha", propFromString "0.1")
             , ("placerHeap/beta", propFromString "0.9")
             , ("placerHeap/criticalityExponent", propFromString "2")
@@ -468,7 +518,9 @@ applyGeneralOpts args opts ctx0 = do
       where
         setDefault c (k, p) = do
             key <- intern (ctxIdTable c) (T.pack k)
-            if M.member key (ctxSettings c)
+            if M.member key (ctxSettings c) || k == "ARCHNAME"
+                -- ARCHNAME is interned by archId() but never stored as a
+                -- setting
                 then pure c
                 else setSetting c (T.pack k) p
 

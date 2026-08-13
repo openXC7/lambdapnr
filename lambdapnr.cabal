@@ -21,13 +21,16 @@ library
   hs-source-dirs:   src
   exposed-modules:
     Lambdapnr.Arch.Ecp5
+    Lambdapnr.Arch.Ecp5.ArchCellInfo
     Lambdapnr.Arch.Ecp5.BaseConfigs
     Lambdapnr.Arch.Ecp5.Binding
     Lambdapnr.Arch.Ecp5.Bitgen
     Lambdapnr.Arch.Ecp5.CellTiming
     Lambdapnr.Arch.Ecp5.Config
+    Lambdapnr.Arch.Ecp5.DcuBitstream
     Lambdapnr.Arch.Ecp5.Chipdb
     Lambdapnr.Arch.Ecp5.ConstIds
+    Lambdapnr.Arch.Ecp5.Pack
     Lambdapnr.Arch.Ecp5.Types
     Lambdapnr.Kernel.Arch
     Lambdapnr.Kernel.ArchCheck
@@ -47,6 +50,7 @@ library
     base >=4.17 && <5,
     bytestring,
     containers,
+    deepseq,
     text,
     vector
   data-files:
@@ -65,7 +69,8 @@ executable lambdapnr
     base,
     containers,
     lambdapnr,
-    text
+    text,
+    vector
   default-language: Haskell2010
 
 test-suite lambdapnr-test

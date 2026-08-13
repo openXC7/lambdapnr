@@ -29,6 +29,18 @@ module Lambdapnr.Arch.Ecp5
   , belAt
   , wireAt
   , pipAt
+  , getTilesAtLoc
+  , getTileByTypeLocSet
+  , getTileByTypeLoc
+  , getTileByType
+  , getWireBasename
+  , getWireByLocBasename
+  , getPioBelBank
+  , getPioFunctionName
+  , getPioByFunctionName
+  , getPackagePinBel
+  , getBelPackagePin
+  , getPioDqsGroup
   ) where
 
 import Control.Exception (SomeException, try)
@@ -63,10 +75,8 @@ data Ecp5 = Ecp5
   , e5ConstIds :: !(V.Vector IdString) -- ^ ids 0..constIdCount-1 (index = chipdb index)
   , e5ConstIdByName :: !(M.Map Text IdString) -- ^ constid name -> id
   , e5ConstIdIdx :: !(M.Map IdString Int) -- ^ constid id -> chipdb index (timing DB lookups)
-  , e5XIds :: !(V.Vector IdString) -- ^ "0".."width-1"
-  , e5YIds :: !(V.Vector IdString)
-  , e5BelNameIds :: !(M.Map Text IdString) -- ^ bel basename -> id
-  , e5WireNameIds :: !(M.Map Text IdString)
+  , e5XIds :: !(V.Vector IdString) -- ^ "X0".."X<width-1>"
+  , e5YIds :: !(V.Vector IdString) -- ^ "Y0".."Y<height-1>"
   , e5Bind :: !BindState
   }
 
@@ -159,14 +169,14 @@ buildEcp5 args cd = do
   constIds <- V.mapM (intern tbl) constidNames
   let constIdByName = M.fromList (zip (V.toList constidNames) (V.toList constIds))
       constIdIdx = M.fromList (zip (V.toList constIds) [0 ..])
-  -- 2. x/y coordinate ids
-  xIds <- V.mapM (intern tbl) (V.generate (cdWidth cd) (T.pack . show))
-  yIds <- V.mapM (intern tbl) (V.generate (cdHeight cd) (T.pack . show))
-  -- 3. bel/wire basenames, per location type (the chipdb deduplicates
-  --    tile types; interning per type keeps the load at the blob's own
-  --    scale instead of expanding every tile instance)
-  belNames <- internTileNames tbl cd ltBels biName
-  wireNames <- internTileNames tbl cd ltWires wiName
+  -- 2. x/y coordinate ids (@idf("X%d", i)@ / @idf("Y%d", i)@): the
+  --    interning ORDER here must match the C++ Arch constructor exactly
+  --    (constids, then X ids, then Y ids) because the checksum hashes
+  --    id indices. Bel/wire names are NOT interned up front in C++
+  --    (ECP5 bel/wire types are constid indices, and bel/wire names are
+  --    interned lazily on demand), so we must not pre-intern them.
+  xIds <- V.mapM (intern tbl) (V.generate (cdWidth cd) (\i -> "X" <> T.pack (show i)))
+  yIds <- V.mapM (intern tbl) (V.generate (cdHeight cd) (\i -> "Y" <> T.pack (show i)))
   pure
     Ecp5
       { e5Chipdb = cd
@@ -177,15 +187,8 @@ buildEcp5 args cd = do
       , e5ConstIdIdx = constIdIdx
       , e5XIds = xIds
       , e5YIds = yIds
-      , e5BelNameIds = belNames
-      , e5WireNameIds = wireNames
       , e5Bind = emptyBindState
       }
-
-internTileNames :: IdTable -> Chipdb -> (LocationType -> V.Vector a) -> (a -> Text) -> IO (M.Map Text IdString)
-internTileNames tbl cd proj nameOf = do
-  let names = [nameOf x | lt <- V.toList (cdLocations cd), x <- V.toList (proj lt)]
-  M.fromList <$> mapM (\n -> (,) n <$> intern tbl n) names
 
 -- | The bundled constids.inc (kept in sync with nextpnr/ecp5/constids.inc
 -- by the submodule pin).
@@ -223,10 +226,12 @@ instance Arch Ecp5 where
     where
       cd = e5Chipdb e
   getBelName e b =
-    [ e5XIds e V.! fromIntegral (locX (belLoc b))
-    , e5YIds e V.! fromIntegral (locY (belLoc b))
-    , belNameId e (belAt (e5Chipdb e) b)
-    ]
+    let bi0 = belAt (e5Chipdb e) b
+        nm = belNameId e bi0
+     in [ e5XIds e V.! fromIntegral (locX (belLoc b))
+        , e5YIds e V.! fromIntegral (locY (belLoc b))
+        , nm
+        ]
   getBelByName e [x, y, name] = do
     xi <- idToCoord e x
     yi <- idToCoord e y
@@ -412,13 +417,17 @@ instance Arch Ecp5 where
 constId :: Ecp5 -> Int32 -> IdString
 constId e i = e5ConstIds e V.! fromIntegral i
 
--- | The interned basename id of a bel.
+-- | The interned basename id of a bel (interned lazily on demand,
+-- mirroring C++ @getBelName@'s @id(...)@ — pre-interning would shift
+-- the id table and break checksum equality).
 belNameId :: Ecp5 -> BelInfo -> IdString
-belNameId e bi = M.findWithDefault (IdString 0) (biName bi) (e5BelNameIds e)
+belNameId e bi = unsafePerformIO (intern (e5IdTable e) (biName bi))
+{-# NOINLINE belNameId #-}
 
--- | The interned basename id of a wire.
+-- | The interned basename id of a wire (see 'belNameId').
 wireNameId :: Ecp5 -> WireInfo -> IdString
-wireNameId e wi = M.findWithDefault (IdString 0) (wiName wi) (e5WireNameIds e)
+wireNameId e wi = unsafePerformIO (intern (e5IdTable e) (wiName wi))
+{-# NOINLINE wireNameId #-}
 
 -- | The ECP5 delay formula: (80 - 9*speed) * (6 + max(d-5,0) + 2*min(d,5)).
 delayFormula :: Ecp5 -> Int -> Int -> DelayT
@@ -472,3 +481,103 @@ toPortDir :: Int32 -> PortDir
 toPortDir 0 = PortIn
 toPortDir 1 = PortOut
 toPortDir _ = PortInout
+
+-- ---------------------------------------------------------------------------
+-- ECP5-specific arch queries (the C++ Arch methods used by the packer
+-- and bitgen; the Arch class keeps only the generic kernel surface)
+-- ---------------------------------------------------------------------------
+
+-- | @get_tiles_at_loc@: the names of all tiles at a grid location.
+getTilesAtLoc :: Ecp5 -> Int -> Int -> [(Text, Text)]
+getTilesAtLoc e y x =
+    [ (tnName tn, cdTiletypeNames cd V.! fromIntegral (tnTypeIdx tn))
+    | tn <- V.toList (tiTileNames (cdTileInfos cd V.! (y * cdWidth cd + x)))
+    ]
+  where
+    cd = e5Chipdb e
+
+-- | @get_tile_by_type_loc@: the name of the tile at (row, col) whose
+-- type is in the set (first match in chipdb order).
+getTileByTypeLocSet :: Ecp5 -> Int -> Int -> [Text] -> Maybe Text
+getTileByTypeLocSet e row col types =
+    let cd = e5Chipdb e
+        tileIdx = row * cdWidth cd + col
+     in case V.find (\tn -> cdTiletypeNames cd V.! fromIntegral (tnTypeIdx tn) `elem` types) (tiTileNames (cdTileInfos cd V.! tileIdx)) of
+            Just tn -> Just (tnName tn)
+            Nothing -> Nothing
+
+-- | @get_tile_by_type_loc@ with a single type.
+getTileByTypeLoc :: Ecp5 -> Int -> Int -> Text -> Maybe Text
+getTileByTypeLoc e row col typ = getTileByTypeLocSet e row col [typ]
+
+-- | @get_tile_by_type@: the first tile in the chip with the type.
+getTileByType :: Ecp5 -> Text -> Maybe Text
+getTileByType e typ =
+    let cd = e5Chipdb e
+     in case V.findIndex (\tile -> typ `elem` map tnName (V.toList (tiTileNames tile))) (cdTileInfos cd) of
+            Nothing -> Nothing
+            Just i -> tnName <$> V.find (\tn -> cdTiletypeNames cd V.! fromIntegral (tnTypeIdx tn) == typ) (tiTileNames (cdTileInfos cd V.! i))
+
+-- | @get_wire_basename@: the raw wire name from the chipdb.
+getWireBasename :: Ecp5 -> WireId -> Text
+getWireBasename e w = wiName (wireAt (e5Chipdb e) w)
+
+-- | @get_wire_by_loc_basename@: the wire at a location with the given
+-- basename (Nothing when absent).
+getWireByLocBasename :: Ecp5 -> Location -> Text -> Maybe WireId
+getWireByLocBasename e loc basename =
+    let lt = locTypeOfTile (e5Chipdb e) (tileIndex (e5Chipdb e) loc)
+     in V.findIndex ((== basename) . wiName) (ltWires lt)
+          <&> \i -> WireId loc (fromIntegral i)
+
+-- | @get_pio_bel_bank@: the IO bank of a PIO bel.
+getPioBelBank :: Ecp5 -> BelId -> Int
+getPioBelBank e bel =
+    case V.find (\pi -> locAdd (Location (pioAbsDx pi) (pioAbsDy pi)) (Location 0 0) == belLoc bel && pioBelIndex pi == fromIntegral (belIdx bel)) (cdPios (e5Chipdb e)) of
+        Just pi -> fromIntegral (pioBank pi)
+        Nothing -> error "lambdapnr: getPioBelBank: failed to find PIO"
+
+-- | @get_pio_function_name@: the special function name of a PIO bel.
+getPioFunctionName :: Ecp5 -> BelId -> Text
+getPioFunctionName e bel =
+    case V.find (\pi -> locAdd (Location (pioAbsDx pi) (pioAbsDy pi)) (Location 0 0) == belLoc bel && pioBelIndex pi == fromIntegral (belIdx bel)) (cdPios (e5Chipdb e)) of
+        Just pi -> pioFunctionName pi
+        Nothing -> ""
+
+-- | @get_pio_by_function_name@: the PIO bel with the special function
+-- name (e.g. @VREF1_3@).
+getPioByFunctionName :: Ecp5 -> Text -> Maybe BelId
+getPioByFunctionName e name =
+    case V.find ((== name) . pioFunctionName) (cdPios (e5Chipdb e)) of
+        Just pi ->
+            Just BelId{belLoc = locAdd (Location (pioAbsDx pi) (pioAbsDy pi)) (Location 0 0), belIdx = fromIntegral (pioBelIndex pi)}
+        Nothing -> Nothing
+
+-- | @get_package_pin_bel@: the bel for a package pin name.
+getPackagePinBel :: Ecp5 -> Text -> Maybe BelId
+getPackagePinBel e pin =
+    let cd = e5Chipdb e
+     in case V.find (\pkg -> pin `elem` map ppName (V.toList (pkgPins pkg))) (cdPackages cd) of
+            Nothing -> Nothing
+            Just pkg ->
+                case V.find ((== pin) . ppName) (pkgPins pkg) of
+                    Just pp -> Just BelId{belLoc = locAdd (Location (ppAbsDx pp) (ppAbsDy pp)) (Location 0 0), belIdx = fromIntegral (ppBelIndex pp)}
+                    Nothing -> Nothing
+
+-- | @get_bel_package_pin@: the package pin name for a bel.
+getBelPackagePin :: Ecp5 -> BelId -> Text
+getBelPackagePin e bel =
+    let cd = e5Chipdb e
+     in case V.find (\pkg -> any (\pp -> locAdd (Location (ppAbsDx pp) (ppAbsDy pp)) (Location 0 0) == belLoc bel && ppBelIndex pp == fromIntegral (belIdx bel)) (V.toList (pkgPins pkg))) (cdPackages cd) of
+            Nothing -> ""
+            Just pkg ->
+                case V.find (\pp -> locAdd (Location (ppAbsDx pp) (ppAbsDy pp)) (Location 0 0) == belLoc bel && ppBelIndex pp == fromIntegral (belIdx bel)) (pkgPins pkg) of
+                    Just pp -> ppName pp
+                    Nothing -> ""
+
+-- | @get_pio_dqs_group@: DQS group of a PIO (dqsright, dqsrow).
+getPioDqsGroup :: Ecp5 -> BelId -> Maybe (Bool, Int)
+getPioDqsGroup e bel =
+    case V.find (\pi -> locAdd (Location (pioAbsDx pi) (pioAbsDy pi)) (Location 0 0) == belLoc bel && pioBelIndex pi == fromIntegral (belIdx bel)) (cdPios (e5Chipdb e)) of
+        Just pi -> Just (fromIntegral (pioDqsGroup pi) < 0, abs (fromIntegral (pioDqsGroup pi)))
+        Nothing -> Nothing
