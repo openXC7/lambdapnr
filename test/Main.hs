@@ -4,6 +4,7 @@ module Main (main) where
 import Test.Tasty (defaultMain, testGroup)
 
 import Lambdapnr.Arch.Ecp5BindingTest (ecp5BindingTests)
+import Lambdapnr.CliSemanticsTest (archcheckTests, cliSemanticsTests)
 import Lambdapnr.CliTest (cliTests)
 import Lambdapnr.Arch.Ecp5Test (ecp5Tests)
 import ZzProbeTest (zzProbe)
@@ -23,6 +24,8 @@ main =
       , ecp5Tests
       , ecp5BindingTests
       , cliTests
+      , cliSemanticsTests
+      , archcheckTests
       , rngTests
       , idStringTests
       , propertyTests

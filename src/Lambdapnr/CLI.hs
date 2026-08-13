@@ -22,9 +22,22 @@ module Lambdapnr.CLI (
     checkSingleDevice,
     renderHelp,
     versionLine,
+    ecp5ArgsFromOpts,
+    applyGeneralOpts,
 ) where
 
-import Data.List (intercalate)
+import qualified Data.ByteString as BS
+import Control.Monad (foldM)
+import Data.List (find, intercalate)
+import qualified Data.Map.Strict as M
+import qualified Data.Text as T
+import System.IO (IOMode (ReadMode), hClose, openBinaryFile)
+
+import Lambdapnr.Arch.Ecp5.Types (Ecp5Args (..), Ecp5Device (..), SpeedGrade (..))
+import Lambdapnr.Kernel.Context (Context (..), setSetting)
+import Lambdapnr.Kernel.IdString (intern)
+import Lambdapnr.Kernel.DeterministicRng (rngSeed, rngState)
+import Lambdapnr.Kernel.Property (propFromInt, propFromString)
 
 -- | An option: short flag, long name, whether it takes a value, and the
 -- help text.
@@ -249,3 +262,248 @@ parseArgs table args
     lookupShort s = case filter ((== Just s) . optShort) table of
         o : _ -> Right o
         [] -> Left ("unrecognised option '-" ++ [s] ++ "'")
+
+-- ---------------------------------------------------------------------------
+-- Option semantics (mirrors ECP5CommandHandler::createContext +
+-- CommandHandler::setupContext)
+
+-- | Is the device a 5G part (only speed grade 8 available)?
+is5g :: Ecp5Device -> Bool
+is5g d = d `elem` [Lfe5um5g25f, Lfe5um5g45f, Lfe5um5g85f]
+
+-- | The value of an option, if given.
+optValue :: [(String, Maybe String)] -> String -> Maybe String
+optValue opts n = snd =<< find ((== n) . fst) opts
+
+-- | Is the option present?
+optSet :: [(String, Maybe String)] -> String -> Bool
+optSet opts n = any ((== n) . fst) opts
+
+{- | Build the architecture arguments from the parsed options, mirroring
+@ECP5CommandHandler::createContext@: device flags select the part
+(default LFE5U-45F), @--package@ defaults to CABGA381 (with the
+deprecation warning), @--speed@ accepts 6\/7\/8, and 5G parts force
+speed grade 8 (@SPEED_8_5G@). The second component of the result is
+the list of warnings to print.
+-}
+ecp5ArgsFromOpts :: [(String, Maybe String)] -> Either String (Ecp5Args, [String])
+ecp5ArgsFromOpts opts = do
+    let dev = deviceFromOpts opts
+        pkg = optValue opts "package"
+        spd = case optValue opts "speed" of
+            Nothing -> Right (if is5g dev then Speed8 else Speed6)
+            Just s -> case reads s of
+                [(6, "")] -> Right Speed6
+                [(7, "")] -> Right Speed7
+                [(8, "")] -> Right Speed8
+                _ -> Left ("Unsupported speed grade '" ++ s ++ "'")
+        warnings
+            | optSet opts "package" && maybe False (not . null) (optValue opts "package") = []
+            | otherwise = ["Use of default value for --package is deprecated. Please add '--package " ++ T.unpack defaultPkg ++ "' to arguments."]
+    speed <- spd
+    if is5g dev && speed /= Speed8
+        then Left "Only speed grade 8 is available for 5G parts"
+        else
+            Right
+                ( Ecp5Args
+                    dev
+                    (case pkg of
+                        Just p | not (null p) -> T.pack p
+                        _ -> defaultPkg
+                    )
+                    (if is5g dev then Speed85g else speed)
+                , warnings
+                )
+  where
+    defaultPkg = "CABGA381"
+
+-- | The device selected by the device flags (default LFE5U-45F).
+deviceFromOpts :: [(String, Maybe String)] -> Ecp5Device
+deviceFromOpts opts
+    | optSet opts "12k" = Lfe5u12f
+    | optSet opts "25k" = Lfe5u25f
+    | optSet opts "45k" = Lfe5u45f
+    | optSet opts "85k" = Lfe5u85f
+    | optSet opts "um-25k" = Lfe5um25f
+    | optSet opts "um-45k" = Lfe5um45f
+    | optSet opts "um-85k" = Lfe5um85f
+    | optSet opts "um5g-25k" = Lfe5um5g25f
+    | optSet opts "um5g-45k" = Lfe5um5g45f
+    | optSet opts "um5g-85k" = Lfe5um5g85f
+    | otherwise = Lfe5u45f -- the C++ default when no device flag is set
+
+-- | The @arch.speed@ setting string (SPEED_8_5G reports as "8").
+speedString :: SpeedGrade -> String
+speedString Speed6 = "6"
+speedString Speed7 = "7"
+speedString _ = "8" -- SPEED_8 and SPEED_8_5G
+
+-- | The @arch.type@ setting string (@archArgsToId@).
+deviceTypeName :: Ecp5Device -> String
+deviceTypeName d = case d of
+    Lfe5u12f -> "lfe5u_12f"
+    Lfe5u25f -> "lfe5u_25f"
+    Lfe5u45f -> "lfe5u_45f"
+    Lfe5u85f -> "lfe5u_85f"
+    Lfe5um25f -> "lfe5um_25f"
+    Lfe5um45f -> "lfe5um_45f"
+    Lfe5um85f -> "lfe5um_85f"
+    Lfe5um5g25f -> "lfe5um5g_25f"
+    Lfe5um5g45f -> "lfe5um5g_45f"
+    Lfe5um5g85f -> "lfe5um5g_85f"
+
+-- | Available placer/router algorithms (the ecp5 statics).
+availablePlacers :: [String]
+availablePlacers = ["sa", "heap", "static"]
+
+availableRouters :: [String]
+availableRouters = ["router1", "router2"]
+
+{- | Apply the general option semantics to a context, mirroring
+@CommandHandler::setupContext@ + the ecp5 @arch.*@ settings from
+@createContext@: RNG seeding (@--seed@\/@--randomize-seed@), the
+placer\/router\/placer-heap\/timing settings, and the defaults
+(@target_freq@, @timing_driven@, @placer@, @router@, @arch.*@, ...).
+All settings are stored as strings (read back through the typed
+'getSetting' accessors), except booleans and the seed, which are
+numeric properties like the C++.
+-}
+applyGeneralOpts :: Ecp5Args -> [(String, Maybe String)] -> Context arch -> IO (Either String (Context arch))
+applyGeneralOpts args opts ctx0 = do
+    r1 <- foldM applyOne (Right ctx0) opts
+    case r1 of
+        Left err -> pure (Left err)
+        Right ctx1 -> Right <$> applyDefaults ctx1
+  where
+    applyOne (Left err) _ = pure (Left err)
+    applyOne (Right ctx) (name, val) = case name of
+        "seed" -> case val of
+            Just s -> case reads s of
+                [(n, "")] -> pure (Right ctx{ctxRng = rngSeed (fromIntegral n) (ctxRng ctx)})
+                _ -> pure (Left ("invalid seed '" ++ s ++ "'"))
+            Nothing -> pure (Left "option '--seed' requires an argument")
+        "randomize-seed" -> do
+            n <- randomSeed
+            putStrLn ("Generated random seed: " ++ show n)
+            pure (Right ctx{ctxRng = rngSeed (fromIntegral n) (ctxRng ctx)})
+        "threads" -> setNum "threads" ctx val
+        "ignore-loops" -> setBool "timing/ignoreLoops" ctx
+        "ignore-rel-clk" -> setBool "timing/ignoreRelClk" ctx
+        "timing-allow-fail" -> setBool "timing/allowFail" ctx
+        "placer" -> do
+            case val of
+                Just p
+                    | p `elem` availablePlacers -> setStr "placer" ctx p
+                    | otherwise ->
+                        pure (Left ("Placer algorithm '" ++ p ++ "' is not supported (available options: " ++ intercalate ", " availablePlacers ++ ")"))
+                Nothing -> pure (Left "option '--placer' requires an argument")
+        "router" -> do
+            case val of
+                Just r
+                    | r `elem` availableRouters -> setStr "router" ctx r
+                    | otherwise ->
+                        pure (Left ("Router algorithm '" ++ r ++ "' is not supported (available options: " ++ intercalate ", " availableRouters ++ ")"))
+                Nothing -> pure (Left "option '--router' requires an argument")
+        "cstrweight" -> setStrF "placer1/constraintWeight" ctx val
+        "starttemp" -> setStrF "placer1/startTemp" ctx val
+        "freq" -> case val >>= readMaybeDouble of
+            Just f | f > 0 -> setStr "target_freq" ctx (show (f * 1e6))
+            _ -> pure (Left "invalid --freq value")
+        "no-tmdriv" -> setBoolFalse "timing_driven" ctx
+        "placer-heap-alpha" -> setStrF "placerHeap/alpha" ctx val
+        "placer-heap-beta" -> setStrF "placerHeap/beta" ctx val
+        "placer-heap-critexp" -> case val of
+            Just v -> setStr "placerHeap/criticalityExponent" ctx v
+            Nothing -> pure (Left "option '--placer-heap-critexp' requires an argument")
+        "placer-heap-timingweight" -> case val of
+            Just v -> setStr "placerHeap/timingWeight" ctx v
+            Nothing -> pure (Left "option '--placer-heap-timingweight' requires an argument")
+        "placer-heap-cell-placement-timeout" -> case val >>= readMaybeInt of
+            Just n -> setStr "placerHeap/cellPlacementTimeout" ctx (show (max 0 n))
+            _ -> pure (Left "invalid --placer-heap-cell-placement-timeout value")
+        "placer-heap-no-ctrl-set" -> setBool "placerHeap/noCtrlSet" ctx
+        "parallel-refine" -> setBool "placerHeap/parallelRefine" ctx
+        "router2-heatmap" -> case val of
+            Just v -> setStr "router2/heatmap" ctx v
+            Nothing -> pure (Left "option '--router2-heatmap' requires an argument")
+        "tmg-ripup" -> setBool "router/tmg_ripup" ctx
+        "router2-tmg-ripup" -> setBool "router/tmg_ripup" ctx
+        "router2-alt-weights" -> setBool "router2/alt-weights" ctx
+        "static-dump-density" -> setBool "static/dump_density" ctx
+        "top" -> case val of
+            Just v -> setStr "frontend/top" ctx v
+            Nothing -> pure (Left "option '--top' requires an argument")
+        "no-promote-globals" -> setBool "arch.no-promote-globals" ctx
+        "out-of-context" -> setBool "arch.ooc" ctx
+        -- accepted, no-op until the corresponding machinery lands:
+        -- verbose, debug, debug-placer, debug-router, quiet, Werror,
+        -- log, force, help, version, test, json, write, sdc, sdf,
+        -- sdf-cvc, no-print-critical-path-source, report,
+        -- detailed-timing-report, placed-svg, routed-svg, pack-only,
+        -- no-pack, no-place, no-route, basecfg, override-basecfg,
+        -- textcfg, lpf, lpf-allow-unconstrained, disable-router-lutperm,
+        -- allow-fabric-eclk, 12k..um5g-85k (device handled above)
+        _ -> pure (Right ctx)
+
+    -- defaults, mirroring the tail of setupContext + createContext: only
+    -- set when absent, so user options win
+    applyDefaults :: Context arch -> IO (Context arch)
+    applyDefaults ctx =
+        foldM setDefault ctx
+            [ ("arch.package", propFromString (eaPackage args))
+            , ("arch.speed", propFromString (T.pack (speedString (eaSpeed args))))
+            , ("arch.name", propFromString "ecp5")
+            , ("arch.type", propFromString (T.pack (deviceTypeName (eaDevice args))))
+            , ("seed", propFromInt (fromIntegral (rngState (ctxRng ctx))) 64)
+            , ("target_freq", propFromString "1.2e7")
+            , ("timing_driven", propTrue)
+            , ("auto_freq", propFalse)
+            , ("placer", propFromString "heap")
+            , ("router", propFromString "router1")
+            , ("placerHeap/alpha", propFromString "0.1")
+            , ("placerHeap/beta", propFromString "0.9")
+            , ("placerHeap/criticalityExponent", propFromString "2")
+            , ("placerHeap/timingWeight", propFromString "10")
+            ]
+      where
+        setDefault c (k, p) = do
+            key <- intern (ctxIdTable c) (T.pack k)
+            if M.member key (ctxSettings c)
+                then pure c
+                else setSetting c (T.pack k) p
+
+    -- stored as string properties (the C++ assigns @Property(true)@,
+    -- a numeric; the typed accessors read either form)
+    propTrue = propFromString "True"
+    propFalse = propFromString "False"
+
+    setStr :: String -> Context arch -> String -> IO (Either String (Context arch))
+    setStr k ctx v = Right <$> setSetting ctx (T.pack k) (propFromString (T.pack v))
+    setStrF :: String -> Context arch -> Maybe String -> IO (Either String (Context arch))
+    setStrF k ctx (Just v) = setStr k ctx v
+    setStrF k _ Nothing = pure (Left ("option '--" ++ k ++ "' requires an argument"))
+    setNum :: String -> Context arch -> Maybe String -> IO (Either String (Context arch))
+    setNum k ctx (Just v) = case reads v of
+        [(n, "")] -> Right <$> setSetting ctx (T.pack k) (propFromInt (fromIntegral n) 64)
+        _ -> pure (Left ("invalid --" ++ k ++ " value '" ++ v ++ "'"))
+    setNum k _ Nothing = pure (Left ("option '--" ++ k ++ "' requires an argument"))
+    setBool :: String -> Context arch -> IO (Either String (Context arch))
+    setBool k ctx = Right <$> setSetting ctx (T.pack k) propTrue
+    setBoolFalse :: String -> Context arch -> IO (Either String (Context arch))
+    setBoolFalse k ctx = Right <$> setSetting ctx (T.pack k) propFalse
+    readMaybeDouble s = case reads s of
+        [(d, "")] -> Just d
+        _ -> Nothing
+    readMaybeInt s = case reads s of
+        [(i, "")] -> Just i
+        _ -> Nothing
+
+-- | A non-zero random seed from the OS entropy source (the C++
+-- @std::random_device@).
+randomSeed :: IO Integer
+randomSeed = do
+    h <- openBinaryFile "/dev/urandom" ReadMode
+    bs <- BS.hGet h 8
+    hClose h
+    pure (BS.foldl' (\acc w -> acc * 256 + fromIntegral w) 0 bs)
+

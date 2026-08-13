@@ -27,6 +27,7 @@ library
     Lambdapnr.Arch.Ecp5.ConstIds
     Lambdapnr.Arch.Ecp5.Types
     Lambdapnr.Kernel.Arch
+    Lambdapnr.Kernel.ArchCheck
     Lambdapnr.Kernel.Checksum
     Lambdapnr.Kernel.Context
     Lambdapnr.Kernel.Delay
@@ -53,6 +54,8 @@ executable lambdapnr
   import:           warnings
   hs-source-dirs:   app
   main-is:          Main.hs
+  -- hard heap cap so --test on the largest parts can never OOM the machine
+  ghc-options:      -with-rtsopts=-M4G
   build-depends:
     base,
     lambdapnr,
@@ -70,6 +73,7 @@ test-suite lambdapnr-test
   other-modules:
     ZzProbeTest
     Lambdapnr.Arch.Ecp5BindingTest
+    Lambdapnr.CliSemanticsTest
     Lambdapnr.CliTest
     Lambdapnr.Arch.Ecp5Test
     Lambdapnr.Kernel.ChecksumTest

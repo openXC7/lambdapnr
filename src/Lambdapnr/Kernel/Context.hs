@@ -26,7 +26,8 @@ import Lambdapnr.Kernel.Checksum (checksum)
 import Lambdapnr.Kernel.DeterministicRng (Rng, newRng)
 import Lambdapnr.Kernel.IdString (IdString, IdTable, intern, newIdTable)
 import Lambdapnr.Kernel.Netlist (Design, emptyDesign)
-import Lambdapnr.Kernel.Property (Property, propFromStr, propToStr)
+import Lambdapnr.Kernel.Property (Property (..), propFromStr)
+import Text.Read (readMaybe)
 
 -- | Everything the kernel algorithms need, threaded explicitly.
 data Context a = Context
@@ -58,7 +59,7 @@ newContextWith tbl arch =
 default is stored on first read, exactly like the C++ non-const
 overload. The setting name is interned on first use.
 -}
-getSetting :: (Read a, Show a, Arch arch) => Context arch -> Text -> a -> IO (a, Context arch)
+getSetting :: (Read a, Show a) => Context arch -> Text -> a -> IO (a, Context arch)
 getSetting ctx name def = do
     key <- intern (ctxIdTable ctx) name
     case M.lookup key (ctxSettings ctx) of
@@ -87,9 +88,23 @@ ctxChecksum ctx =
 
 -- helpers ----------------------------------------------------------------
 
--- | Parse a stored string setting back to a typed value.
+-- | Parse a stored setting back to a typed value: numeric properties
+-- decode through their integer value (like the C++ @as_int64@), string
+-- properties through 'read'.
 readSetting :: (Read a) => Property -> a
-readSetting p = read (T.unpack (propToStr p))
+readSetting (PropNum _ i) =
+    maybe (error ("lambdapnr: cannot read numeric setting " ++ show i)) id (readMaybe (show i))
+readSetting (PropStr s) =
+    -- string properties: numeric targets parse the bare text; String/Text
+    -- targets need the quoted literal form, so fall back to 'show'
+    maybe
+        ( maybe
+            (error ("lambdapnr: cannot read setting " ++ show s))
+            id
+            (readMaybe (show s))
+        )
+        id
+        (readMaybe (T.unpack s))
 
 -- | Store a default as a string property.
 defaultSetting :: (Show a) => a -> Property

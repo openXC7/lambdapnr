@@ -21,6 +21,7 @@ module Lambdapnr.Arch.Ecp5
   , ecp5Args
   , ecp5Bind
   , setEcp5Bind
+  , ecp5IdTable
   , ecp5TimingDb
   , tileIndex
   , tileXY
@@ -100,6 +101,10 @@ ecp5Bind = e5Bind
 -- back into the arch record).
 setEcp5Bind :: BindState -> Ecp5 -> Ecp5
 setEcp5Bind bs e = e{e5Bind = bs}
+
+-- | The arch's id table (share it with the context via 'newContextWith').
+ecp5IdTable :: Ecp5 -> IdTable
+ecp5IdTable = e5IdTable
 
 -- | The timing-database view (cell timings of the selected speed grade
 -- + constid tables).
@@ -204,8 +209,9 @@ instance Arch Ecp5 where
   getChipName = deviceName . eaDevice . e5Args
   getGridDimX = cdWidth . e5Chipdb
   getGridDimY = cdHeight . e5Chipdb
-  getTileBelDimZ e x y =
-    V.length (ltBels (locTypeOfTile (e5Chipdb e) (tileIndex (e5Chipdb e) (Location (fromIntegral x) (fromIntegral y)))))
+  -- the C++ constant @max_loc_bels = 32@: the maximum bel z over all
+  -- tile types (z indices are sparse per tile, e.g. 0,1,4,5,...)
+  getTileBelDimZ _ _ _ = 32
   getNameDelimiter _ = '/'
 
   -- Bels ---------------------------------------------------------------
