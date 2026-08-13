@@ -1,0 +1,2362 @@
+{
+ "creator": "lambdapnr rioctrl mini extraction",
+ "modules": {
+  "rioctrl_controller": {
+   "attributes": {
+    "hdlname": "rioctrl_controller",
+    "top": "00000000000000000000000000000001",
+    "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:23.1-2380.10"
+   },
+   "ports": {},
+   "cells": {
+    "LUT4": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "10"
+     },
+     "attributes": {
+      "keep": "true",
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1937.3-1946.2"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       25
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       "0"
+      ],
+      "D": [
+       "0"
+      ],
+      "Z": [
+       29
+      ]
+     }
+    },
+    "JTAGG": {
+     "hide_name": 0,
+     "type": "JTAGG",
+     "parameters": {},
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1917.7-1928.2"
+     },
+     "port_directions": {
+      "JCE1": "output",
+      "JRSTN": "output",
+      "JSHIFT": "output",
+      "JTCK": "output",
+      "JTDI": "output",
+      "JTDO1": "input",
+      "JUPDATE": "output"
+     },
+     "connections": {
+      "JCE1": [
+       22
+      ],
+      "JRSTN": [
+       23
+      ],
+      "JSHIFT": [
+       24
+      ],
+      "JTCK": [
+       25
+      ],
+      "JTDI": [
+       26
+      ],
+      "JTDO1": [
+       27
+      ],
+      "JUPDATE": [
+       28
+      ]
+     }
+    },
+    "LUT4_1": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "10"
+     },
+     "attributes": {
+      "keep": "true",
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1955.3-1964.2"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       29
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       "0"
+      ],
+      "D": [
+       "0"
+      ],
+      "Z": [
+       30
+      ]
+     }
+    },
+    "basesoc_uart_core_count_next_value_ce2_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0000111100000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:119.33-120.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       6881
+      ],
+      "D": [
+       24
+      ],
+      "Z": [
+       6872
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_5": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1110101011000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6904
+      ],
+      "B": [
+       26
+      ],
+      "C": [
+       6880
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       6896
+      ]
+     }
+    },
+    "basesoc_uart_core_jtag_jce1_d_TRELLIS_FF_Q": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "1 ",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:68.164-68.215"
+     },
+     "port_directions": {
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CLK": [
+       13
+      ],
+      "DI": [
+       22
+      ],
+      "LSR": [
+       15
+      ],
+      "Q": [
+       6912
+      ]
+     }
+    },
+    "basesoc_uart_core_jtag_rst_n_LUT4_D": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1010111011111111"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       15
+      ],
+      "B": [
+       22
+      ],
+      "C": [
+       6912
+      ],
+      "D": [
+       23
+      ],
+      "Z": [
+       6874
+      ]
+     }
+    },
+    "basesoc_uart_core_jtag_tdo_PFUMX_Z": {
+     "hide_name": 0,
+     "type": "PFUMX",
+     "parameters": {},
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:138.19-138.63"
+     },
+     "port_directions": {
+      "ALUT": "input",
+      "BLUT": "input",
+      "C0": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "ALUT": [
+       6913
+      ],
+      "BLUT": [
+       6914
+      ],
+      "C0": [
+       6907
+      ],
+      "Z": [
+       27
+      ]
+     }
+    },
+    "basesoc_uart_core_rx_valid_in_next_value3_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1111000000000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:119.33-120.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       26
+      ],
+      "D": [
+       7024
+      ],
+      "Z": [
+       7025
+      ]
+     }
+    },
+    "basesoc_uart_core_rx_valid_in_next_value_ce3_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0000110000000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:124.33-125.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       6881
+      ],
+      "C": [
+       6907
+      ],
+      "D": [
+       24
+      ],
+      "Z": [
+       7024
+      ]
+     }
+    },
+    "basesoc_uart_core_shift_d_TRELLIS_FF_Q": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "1 ",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:68.164-68.215"
+     },
+     "port_directions": {
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CLK": [
+       13
+      ],
+      "DI": [
+       24
+      ],
+      "LSR": [
+       15
+      ],
+      "Q": [
+       7026
+      ]
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_graycounter1_q_next_binary_LUT4_Z_1": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0011110011001100"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:124.33-125.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       7084
+      ],
+      "C": [
+       26
+      ],
+      "D": [
+       7088
+      ],
+      "Z": [
+       7083
+      ]
+     }
+    },
+    "basesoc_uart_core_update_ready_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1010000010000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6881
+      ],
+      "B": [
+       7026
+      ],
+      "C": [
+       6907
+      ],
+      "D": [
+       24
+      ],
+      "Z": [
+       6918
+      ]
+     }
+    },
+    "basesoc_uart_core_valid_next_value0_LUT4_D": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1100000000000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:124.33-125.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       7084
+      ],
+      "C": [
+       26
+      ],
+      "D": [
+       7088
+      ],
+      "Z": [
+       7087
+      ]
+     }
+    },
+    "uart_state_TRELLIS_FF_Q_CE_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1111111100001100"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:124.33-125.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       24
+      ],
+      "C": [
+       8793
+      ],
+      "D": [
+       6918
+      ],
+      "Z": [
+       8792
+      ]
+     }
+    },
+    "LUT4_2": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "10"
+     },
+     "attributes": {
+      "keep": "true",
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1973.3-1982.2"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       30
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       "0"
+      ],
+      "D": [
+       "0"
+      ],
+      "Z": [
+       31
+      ]
+     }
+    },
+    "basesoc_uart_core_count_TRELLIS_FF_Q": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6873
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6875
+      ]
+     }
+    },
+    "basesoc_uart_core_count_TRELLIS_FF_Q_1": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6876
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6877
+      ]
+     }
+    },
+    "basesoc_uart_core_count_TRELLIS_FF_Q_2": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6878
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6879
+      ]
+     }
+    },
+    "basesoc_uart_core_data_TRELLIS_FF_Q": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6882
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6883
+      ]
+     }
+    },
+    "basesoc_uart_core_data_TRELLIS_FF_Q_1": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6884
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6885
+      ]
+     }
+    },
+    "basesoc_uart_core_data_TRELLIS_FF_Q_2": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6886
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6887
+      ]
+     }
+    },
+    "basesoc_uart_core_data_TRELLIS_FF_Q_3": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6888
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6889
+      ]
+     }
+    },
+    "basesoc_uart_core_data_TRELLIS_FF_Q_4": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6890
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6891
+      ]
+     }
+    },
+    "basesoc_uart_core_data_TRELLIS_FF_Q_5": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6892
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6893
+      ]
+     }
+    },
+    "basesoc_uart_core_data_TRELLIS_FF_Q_6": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6894
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6895
+      ]
+     }
+    },
+    "basesoc_uart_core_data_TRELLIS_FF_Q_7": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6872
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       6896
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6897
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_C_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1111000000000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:119.33-120.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       6907
+      ],
+      "D": [
+       6872
+      ],
+      "Z": [
+       6880
+      ]
+     }
+    },
+    "basesoc_uart_core_jtag_tdo_PFUMX_Z_ALUT_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0000111100000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:136.39-137.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       6881
+      ],
+      "D": [
+       6883
+      ],
+      "Z": [
+       6913
+      ]
+     }
+    },
+    "basesoc_uart_core_valid_LUT4_D": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1111110000110000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:134.39-135.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       6881
+      ],
+      "C": [
+       6920
+      ],
+      "D": [
+       7143
+      ],
+      "Z": [
+       6914
+      ]
+     }
+    },
+    "basesoc_uart_core_valid_next_value_ce0_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0000111100000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:119.33-120.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       6907
+      ],
+      "D": [
+       6872
+      ],
+      "Z": [
+       6899
+      ]
+     }
+    },
+    "uart_next_state_LUT4_Z_1": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0000111111110000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:119.33-120.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       6881
+      ],
+      "D": [
+       6907
+      ],
+      "Z": [
+       8791
+      ]
+     }
+    },
+    "uart_state_TRELLIS_FF_Q": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       8792
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       8791
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       6881
+      ]
+     }
+    },
+    "basesoc_uart_core_count_next_value2_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0011110000000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:124.33-125.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       6877
+      ],
+      "C": [
+       6875
+      ],
+      "D": [
+       6880
+      ],
+      "Z": [
+       6876
+      ]
+     }
+    },
+    "basesoc_uart_core_count_next_value2_LUT4_Z_1": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0000111100000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:119.33-120.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       "0"
+      ],
+      "B": [
+       "0"
+      ],
+      "C": [
+       6875
+      ],
+      "D": [
+       6880
+      ],
+      "Z": [
+       6873
+      ]
+     }
+    },
+    "basesoc_uart_core_count_next_value2_LUT4_Z_2": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0110101000000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6879
+      ],
+      "B": [
+       6877
+      ],
+      "C": [
+       6875
+      ],
+      "D": [
+       6880
+      ],
+      "Z": [
+       6878
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1110110010100000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6897
+      ],
+      "B": [
+       6898
+      ],
+      "C": [
+       6880
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       6894
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_1": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1110110010100000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6887
+      ],
+      "B": [
+       6900
+      ],
+      "C": [
+       6880
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       6884
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_2": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1110110010100000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6889
+      ],
+      "B": [
+       6901
+      ],
+      "C": [
+       6880
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       6886
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_3": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1110110010100000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6893
+      ],
+      "B": [
+       6902
+      ],
+      "C": [
+       6880
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       6890
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_4": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1110110010100000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6895
+      ],
+      "B": [
+       6903
+      ],
+      "C": [
+       6880
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       6892
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_6": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1110110010100000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6885
+      ],
+      "B": [
+       6905
+      ],
+      "C": [
+       6880
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       6882
+      ]
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_7": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "1110110010100000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       6891
+      ],
+      "B": [
+       6906
+      ],
+      "C": [
+       6880
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       6888
+      ]
+     }
+    },
+    "basesoc_uart_core_valid_TRELLIS_FF_Q": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "CE",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET",
+      "SRMODE": "LSR_OVER_CE"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:1515.1-1561.4|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:83.170-83.229"
+     },
+     "port_directions": {
+      "CE": "input",
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CE": [
+       6899
+      ],
+      "CLK": [
+       13
+      ],
+      "DI": [
+       7088
+      ],
+      "LSR": [
+       6874
+      ],
+      "Q": [
+       7143
+      ]
+     }
+    },
+    "basesoc_uart_core_valid_next_value0_LUT4_Z": {
+     "hide_name": 0,
+     "type": "LUT4",
+     "parameters": {
+      "INIT": "0110111100000000"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:128.32-129.56"
+     },
+     "port_directions": {
+      "A": "input",
+      "B": "input",
+      "C": "input",
+      "D": "input",
+      "Z": "output"
+     },
+     "connections": {
+      "A": [
+       7144
+      ],
+      "B": [
+       7080
+      ],
+      "C": [
+       7145
+      ],
+      "D": [
+       6899
+      ],
+      "Z": [
+       7088
+      ]
+     }
+    },
+    "storage_dat1_TRELLIS_FF_Q_4": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "1 ",
+      "CLKMUX": "CLK",
+      "GSR": "DISABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "RESET"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:16.100-16.154"
+     },
+     "port_directions": {
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CLK": [
+       13
+      ],
+      "DI": [
+       8757
+      ],
+      "LSR": [
+       "0"
+      ],
+      "Q": [
+       6904
+      ]
+     }
+    },
+    "FD1S3BX_2": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "1 ",
+      "CLKMUX": "CLK",
+      "GSR": "ENABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "SET",
+      "SRMODE": "ASYNC"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:2253.9-2261.2|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_ff.vh:10.188-10.250"
+     },
+     "port_directions": {
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CLK": [
+       13
+      ],
+      "DI": [
+       "0"
+      ],
+      "LSR": [
+       9
+      ],
+      "Q": [
+       14
+      ]
+     }
+    },
+    "FD1S3BX_3": {
+     "hide_name": 0,
+     "type": "TRELLIS_FF",
+     "parameters": {
+      "CEMUX": "1 ",
+      "CLKMUX": "CLK",
+      "GSR": "ENABLED",
+      "LSRMUX": "LSR",
+      "REGSET": "SET",
+      "SRMODE": "ASYNC"
+     },
+     "attributes": {
+      "module_not_derived": "00000000000000000000000000000001",
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:2266.9-2274.2|/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_ff.vh:10.188-10.250"
+     },
+     "port_directions": {
+      "CLK": "input",
+      "DI": "input",
+      "LSR": "input",
+      "Q": "output"
+     },
+     "connections": {
+      "CLK": [
+       13
+      ],
+      "DI": [
+       14
+      ],
+      "LSR": [
+       9
+      ],
+      "Q": [
+       15
+      ]
+     }
+    }
+   },
+   "netnames": {
+    "basesoc_ram_bus_ram_bus_ack_LUT4_C_1_Z": {
+     "hide_name": 0,
+     "bits": [
+      9
+     ],
+     "attributes": {
+      "force_downto": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:108.23-108.24"
+     }
+    },
+    "basesoc_uart_core_count": {
+     "hide_name": 0,
+     "bits": [
+      6875,
+      6877,
+      6879
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:230.15-230.38"
+     }
+    },
+    "basesoc_uart_core_count_next_value2": {
+     "hide_name": 0,
+     "bits": [
+      6873,
+      6876,
+      6878
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:231.15-231.50"
+     }
+    },
+    "basesoc_uart_core_count_next_value_ce2": {
+     "hide_name": 0,
+     "bits": [
+      6872
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:232.15-232.53"
+     }
+    },
+    "basesoc_uart_core_data": {
+     "hide_name": 0,
+     "bits": [
+      6883,
+      6885,
+      6887,
+      6889,
+      6891,
+      6893,
+      6895,
+      6897
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:233.15-233.37"
+     }
+    },
+    "basesoc_uart_core_data_next_value1": {
+     "hide_name": 0,
+     "bits": [
+      6882,
+      6884,
+      6886,
+      6888,
+      6890,
+      6892,
+      6894,
+      6896
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:234.15-234.49"
+     }
+    },
+    "basesoc_uart_core_data_next_value1_LUT4_Z_C": {
+     "hide_name": 0,
+     "bits": [
+      6885,
+      6905,
+      6880,
+      6899
+     ],
+     "attributes": {
+      "force_downto": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:108.23-108.24"
+     }
+    },
+    "basesoc_uart_core_data_next_value_ce1": {
+     "hide_name": 0,
+     "bits": [
+      6872
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:235.15-235.52"
+     }
+    },
+    "basesoc_uart_core_jtag_jce1": {
+     "hide_name": 0,
+     "bits": [
+      22
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:241.15-241.42"
+     }
+    },
+    "basesoc_uart_core_jtag_jce1_d": {
+     "hide_name": 0,
+     "bits": [
+      6912
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:242.15-242.44"
+     }
+    },
+    "basesoc_uart_core_jtag_new_tck0": {
+     "hide_name": 0,
+     "bits": [
+      29
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:243.15-243.46"
+     }
+    },
+    "basesoc_uart_core_jtag_new_tck1": {
+     "hide_name": 0,
+     "bits": [
+      30
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:244.15-244.46"
+     }
+    },
+    "basesoc_uart_core_jtag_new_tck2": {
+     "hide_name": 0,
+     "bits": [
+      31
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:245.15-245.46"
+     }
+    },
+    "basesoc_uart_core_jtag_new_tck7": {
+     "hide_name": 0,
+     "bits": [
+      13
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:250.15-250.46"
+     }
+    },
+    "basesoc_uart_core_jtag_rst_n": {
+     "hide_name": 0,
+     "bits": [
+      23
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:252.15-252.43"
+     }
+    },
+    "basesoc_uart_core_jtag_rst_n_LUT4_D_Z": {
+     "hide_name": 0,
+     "bits": [
+      6874
+     ],
+     "attributes": {}
+    },
+    "basesoc_uart_core_jtag_shift": {
+     "hide_name": 0,
+     "bits": [
+      24
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:253.15-253.43"
+     }
+    },
+    "basesoc_uart_core_jtag_tck0": {
+     "hide_name": 0,
+     "bits": [
+      13
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:254.15-254.42"
+     }
+    },
+    "basesoc_uart_core_jtag_tck1": {
+     "hide_name": 0,
+     "bits": [
+      25
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:255.15-255.42"
+     }
+    },
+    "basesoc_uart_core_jtag_tdi": {
+     "hide_name": 0,
+     "bits": [
+      26
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:256.15-256.41"
+     }
+    },
+    "basesoc_uart_core_jtag_tdo": {
+     "hide_name": 0,
+     "bits": [
+      27
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:257.15-257.41"
+     }
+    },
+    "basesoc_uart_core_jtag_tdo_PFUMX_Z_ALUT": {
+     "hide_name": 0,
+     "bits": [
+      6913
+     ],
+     "attributes": {
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:133.22-133.24"
+     }
+    },
+    "basesoc_uart_core_jtag_tdo_PFUMX_Z_BLUT": {
+     "hide_name": 0,
+     "bits": [
+      6914
+     ],
+     "attributes": {
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:133.18-133.20"
+     }
+    },
+    "basesoc_uart_core_jtag_update": {
+     "hide_name": 0,
+     "bits": [
+      28
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:258.15-258.44",
+      "unused_bits": "0 "
+     }
+    },
+    "basesoc_uart_core_ready": {
+     "hide_name": 0,
+     "bits": [
+      6920
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:263.15-263.38"
+     }
+    },
+    "basesoc_uart_core_rx_valid_in_next_value3": {
+     "hide_name": 0,
+     "bits": [
+      7025
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:362.15-362.56"
+     }
+    },
+    "basesoc_uart_core_rx_valid_in_next_value_ce3": {
+     "hide_name": 0,
+     "bits": [
+      7024
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:363.15-363.59"
+     }
+    },
+    "basesoc_uart_core_shift_d": {
+     "hide_name": 0,
+     "bits": [
+      7026
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:374.15-374.40"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_asyncfifo_dout": {
+     "hide_name": 0,
+     "bits": [
+      6905,
+      6900,
+      6901,
+      6906,
+      6902,
+      6903,
+      6898,
+      6904
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:394.15-394.58"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_fifo_out_payload_data": {
+     "hide_name": 0,
+     "bits": [
+      6905,
+      6900,
+      6901,
+      6906,
+      6902,
+      6903,
+      6898,
+      6904
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:405.15-405.65"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_graycounter1_q": {
+     "hide_name": 0,
+     "bits": [
+      7080
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:412.15-412.58"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_graycounter1_q_binary": {
+     "hide_name": 0,
+     "bits": [
+      7084
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:413.15-413.65"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_graycounter1_q_next_binary": {
+     "hide_name": 0,
+     "bits": [
+      7083
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:415.15-415.70"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_produce_rdomain": {
+     "hide_name": 0,
+     "bits": [
+      7144
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:416.15-416.59"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_rdport_adr": {
+     "hide_name": 0,
+     "bits": [
+      7083
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:417.15-417.54"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_rdport_dat_r": {
+     "hide_name": 0,
+     "bits": [
+      6905,
+      6900,
+      6901,
+      6906,
+      6902,
+      6903,
+      6898,
+      6904
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:418.15-418.56"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_cdc_source_payload_data": {
+     "hide_name": 0,
+     "bits": [
+      6905,
+      6900,
+      6901,
+      6906,
+      6902,
+      6903,
+      6898,
+      6904
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:426.15-426.63"
+     }
+    },
+    "basesoc_uart_core_tx_cdc_source_source_payload_data": {
+     "hide_name": 0,
+     "bits": [
+      6905,
+      6900,
+      6901,
+      6906,
+      6902,
+      6903,
+      6898,
+      6904
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:440.15-440.66"
+     }
+    },
+    "basesoc_uart_core_update_ready": {
+     "hide_name": 0,
+     "bits": [
+      6918
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:500.15-500.45"
+     }
+    },
+    "basesoc_uart_core_update_rx": {
+     "hide_name": 0,
+     "bits": [
+      6918
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:501.15-501.42"
+     }
+    },
+    "basesoc_uart_core_valid": {
+     "hide_name": 0,
+     "bits": [
+      7143
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:502.15-502.38"
+     }
+    },
+    "basesoc_uart_core_valid_next_value0": {
+     "hide_name": 0,
+     "bits": [
+      7088
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:503.15-503.50"
+     }
+    },
+    "basesoc_uart_core_valid_next_value0_LUT4_D_Z": {
+     "hide_name": 0,
+     "bits": [
+      7087
+     ],
+     "attributes": {
+      "force_downto": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:108.23-108.24"
+     }
+    },
+    "basesoc_uart_core_valid_next_value0_LUT4_Z_C": {
+     "hide_name": 0,
+     "bits": [
+      7144,
+      7080,
+      7145,
+      6899
+     ],
+     "attributes": {
+      "force_downto": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:108.23-108.24"
+     }
+    },
+    "basesoc_uart_core_valid_next_value_ce0": {
+     "hide_name": 0,
+     "bits": [
+      6899
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:504.15-504.53"
+     }
+    },
+    "from470_clk": {
+     "hide_name": 0,
+     "bits": [
+      13
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:624.15-624.26"
+     }
+    },
+    "jtag_clk": {
+     "hide_name": 0,
+     "bits": [
+      13
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:643.15-643.23"
+     }
+    },
+    "jtag_rst": {
+     "hide_name": 0,
+     "bits": [
+      15
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:644.15-644.23"
+     }
+    },
+    "multiregimpl01": {
+     "hide_name": 0,
+     "bits": [
+      7144
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:647.15-647.29"
+     }
+    },
+    "rst11": {
+     "hide_name": 0,
+     "bits": [
+      14
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:664.15-664.20"
+     }
+    },
+    "storage.0.1_DO": {
+     "hide_name": 0,
+     "bits": [
+      8757
+     ],
+     "attributes": {
+      "unused_bits": "8 9"
+     }
+    },
+    "storage_dat1": {
+     "hide_name": 0,
+     "bits": [
+      6905,
+      6900,
+      6901,
+      6906,
+      6902,
+      6903,
+      6898,
+      6904
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:2081.11-2081.23"
+     }
+    },
+    "sys_rst": {
+     "hide_name": 0,
+     "bits": [
+      9
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:683.15-683.22"
+     }
+    },
+    "to319_clk": {
+     "hide_name": 0,
+     "bits": [
+      13
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:684.15-684.24"
+     }
+    },
+    "uart_next_state": {
+     "hide_name": 0,
+     "bits": [
+      8791
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:688.15-688.30"
+     }
+    },
+    "uart_state": {
+     "hide_name": 0,
+     "bits": [
+      6907,
+      6881
+     ],
+     "attributes": {
+      "src": "/devel/riscv/litex-root/litex-boards/build/rioctrl_controller/gateware/rioctrl_controller.v:689.15-689.25"
+     }
+    },
+    "uart_state_TRELLIS_FF_Q_CE": {
+     "hide_name": 0,
+     "bits": [
+      8792
+     ],
+     "attributes": {}
+    },
+    "uart_state_TRELLIS_FF_Q_CE_LUT4_Z_C": {
+     "hide_name": 0,
+     "bits": [
+      24,
+      8793,
+      6918
+     ],
+     "attributes": {
+      "force_downto": "00000000000000000000000000000001",
+      "src": "/nix/store/6s883xry5qkqacjcjcp88isqa16g4p03-yosys-0.67/bin/../share/yosys/lattice/cells_map_trellis.v:108.23-108.24"
+     }
+    }
+   }
+  }
+ }
+}

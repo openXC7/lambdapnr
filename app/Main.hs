@@ -13,6 +13,8 @@ milestone; everything exits 125 like the C++ @log_error@ path.
 module Main (main) where
 
 import Control.Monad (forM_)
+import qualified Data.Map.Strict as M
+import qualified Data.Text.IO as TIO
 import System.Environment (getArgs, getProgName)
 import System.Exit (ExitCode (..), exitSuccess, exitWith)
 import System.IO (hPutStrLn, stderr)
@@ -22,7 +24,9 @@ import Lambdapnr.Arch.Ecp5.Types (eaDevice)
 import Lambdapnr.CLI (Command (..), applyGeneralOpts, checkSingleDevice, ecp5ArgsFromOpts, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
 import Lambdapnr.Kernel.Arch (getChipName)
 import Lambdapnr.Kernel.ArchCheck (archcheck)
-import Lambdapnr.Kernel.Context (newContextWith)
+import Lambdapnr.Kernel.Context (Context (..), newContextWith)
+import Lambdapnr.Kernel.JsonFrontend (loadJsonDesign)
+import Lambdapnr.Kernel.Netlist (Design, designCells, designNets)
 
 main :: IO ()
 main = do
@@ -58,7 +62,7 @@ runFlow prog opts = case checkSingleDevice opts of
                     r2 <- applyGeneralOpts args opts ctx
                     case r2 of
                         Left err -> die prog err
-                        Right _ctx' ->
+                        Right ctx' ->
                             if "test" `elem` map fst opts
                                 then do
                                     hPutStrLn stderr "Running architecture database integrity check."
@@ -72,11 +76,24 @@ runFlow prog opts = case checkSingleDevice opts of
                                             forM_ failures (hPutStrLn stderr . ("ERROR: " ++))
                                             exitWith (ExitFailure 125)
                                 else
-                                    if any ((== "json") . fst) opts
-                                        then die prog "JSON design loading not yet implemented"
-                                        else die prog "no JSON design file specified"
+                                    case lookup "json" opts of
+                                        Just (Just jsonFile) -> do
+                                            jsrc <- TIO.readFile jsonFile
+                                            r <- loadJsonDesign (ctxIdTable ctx') Nothing jsrc
+                                            case r of
+                                                Left err -> die prog err
+                                                Right d -> do
+                                                    reportDesign prog jsonFile d
+                                                    die prog "packing not yet implemented"
+                                        _ -> die prog "no JSON design file specified"
 
 die :: String -> String -> IO a
 die prog err = do
     hPutStrLn stderr (prog ++ ": " ++ err)
     exitWith (ExitFailure 125)
+
+-- | Print the imported design summary (the comparison point against
+-- the nextpnr reference run).
+reportDesign :: String -> FilePath -> Design bel wire pip -> IO ()
+reportDesign prog jsonFile d = do
+    hPutStrLn stderr (prog ++ ": imported " ++ show (M.size (designCells d)) ++ " cells, " ++ show (M.size (designNets d)) ++ " nets from " ++ jsonFile)

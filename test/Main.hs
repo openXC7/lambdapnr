@@ -5,6 +5,7 @@ import Test.Tasty (defaultMain, testGroup)
 
 import Lambdapnr.Arch.Ecp5BindingTest (ecp5BindingTests)
 import Lambdapnr.CliSemanticsTest (archcheckTests, cliSemanticsTests)
+import Lambdapnr.JsonFrontendTest (jsonFrontendTests)
 import Lambdapnr.CliTest (cliTests)
 import Lambdapnr.Arch.Ecp5Test (ecp5Tests)
 import ZzProbeTest (zzProbe)
@@ -26,6 +27,7 @@ main =
       , cliTests
       , cliSemanticsTests
       , archcheckTests
+      , jsonFrontendTests
       , rngTests
       , idStringTests
       , propertyTests

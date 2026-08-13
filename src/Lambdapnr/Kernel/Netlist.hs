@@ -26,6 +26,7 @@ module Lambdapnr.Kernel.Netlist (
     disconnectPort,
     setCellBel,
     clearCellBel,
+    setCellPort,
     setNetWire,
     removeNetWire,
     strengthToInt,
@@ -65,6 +66,16 @@ setCellBel cell bel strength d =
     case M.lookup cell (designCells d) of
         Nothing -> d
         Just ci -> d{designCells = M.insert cell (ci{cellBel = Just bel, cellBelStrength = strength}) (designCells d)}
+
+-- | Create (or overwrite) a cell port entry, mirroring the C++
+-- @ci->ports[id] = {name, type}@ before @connectPort@.
+setCellPort :: IdString -> IdString -> PortDir -> Design bel wire pip -> Design bel wire pip
+setCellPort cell port dir d =
+    case M.lookup cell (designCells d) of
+        Nothing -> d
+        Just ci ->
+            let pi = PortInfo{portName = port, portNet = Nothing, portType = dir, portUserIdx = 0}
+             in d{designCells = M.insert cell (ci{cellPorts = M.insert port pi (cellPorts ci)}) (designCells d)}
 
 -- | Clear a cell's bel binding (@cell->bel = BelId()@).
 clearCellBel :: IdString -> Design bel wire pip -> Design bel wire pip
@@ -157,6 +168,14 @@ data Design bel wire pip = Design
 
 emptyDesign :: Design bel wire pip
 emptyDesign = Design M.empty M.empty
+
+-- | Left-biased merge (fresh entries win), used by the frontend when
+-- splicing newly created nets/cells into the design.
+instance Semigroup (Design bel wire pip) where
+    Design a b <> Design c d = Design (M.union a c) (M.union b d)
+
+instance Monoid (Design bel wire pip) where
+    mempty = emptyDesign
 
 lookupCell :: IdString -> Design bel wire pip -> Maybe (CellInfo bel wire pip)
 lookupCell n = M.lookup n . designCells
