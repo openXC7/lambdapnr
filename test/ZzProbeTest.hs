@@ -26,7 +26,7 @@ import Test.Tasty.HUnit (assertBool, testCase)
 
 import Lambdapnr.Arch.Ecp5
 import Lambdapnr.Arch.Ecp5.Chipdb (Chipdb (..), ltWires)
-import Lambdapnr.Arch.Ecp5.Types (Ecp5Args (..), Ecp5Device (Lfe5um5g25f), SpeedGrade (Speed6))
+import Lambdapnr.Arch.Ecp5.Types (Ecp5Args (..), Ecp5Device (..), SpeedGrade (Speed6))
 import Lambdapnr.Kernel.Arch
 
 -- | Ceiling for the whole test process's peak RSS (generous; the loaded
@@ -48,7 +48,8 @@ peakRss = do
 
 zzProbe :: TestTree
 zzProbe = testCase "ecp5 chipdb load stays within memory bounds" $ do
-  e <- loadEcp5 (Ecp5Args Lfe5um5g25f "" Speed6) "data/ecp5/chipdb-25k.bin" >>= either (error . show) pure
+  -- the largest shipped chipdb is the worst case
+  e <- loadEcp5 (Ecp5Args Lfe5u85f "" Speed6) "data/ecp5/chipdb-85k.bin" >>= either (error . show) pure
   let cd = ecp5Chipdb e
   -- force the whole query surface: all wires of all location types, then
   -- the full bel/wire/pip enumerations
@@ -57,7 +58,7 @@ zzProbe = testCase "ecp5 chipdb load stays within memory bounds" $ do
   _ <- evaluate (length (getPips e))
   _ <- evaluate (length (getBels e))
   rss <- peakRss
-  putStrLn ("zz: peak RSS after chipdb load+query = " ++ show (rss `div` (1024 * 1024)) ++ " MB")
+  putStrLn ("zz: peak RSS after 85k chipdb load+query = " ++ show (rss `div` (1024 * 1024)) ++ " MB")
   hFlush stdout
   assertBool
     ("peak RSS after full chipdb load+query exceeds ceiling: "

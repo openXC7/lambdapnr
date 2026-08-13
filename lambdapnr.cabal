@@ -36,6 +36,7 @@ library
     Lambdapnr.Kernel.Netlist
     Lambdapnr.Kernel.Property
     Lambdapnr.Kernel.Timing
+    Lambdapnr.CLI
   build-depends:
     base >=4.17 && <5,
     bytestring,
@@ -44,6 +45,8 @@ library
     vector
   data-files:
     data/ecp5/chipdb-25k.bin
+    data/ecp5/chipdb-45k.bin
+    data/ecp5/chipdb-85k.bin
   default-language: Haskell2010
 
 executable lambdapnr
@@ -67,6 +70,7 @@ test-suite lambdapnr-test
   other-modules:
     ZzProbeTest
     Lambdapnr.Arch.Ecp5BindingTest
+    Lambdapnr.CliTest
     Lambdapnr.Arch.Ecp5Test
     Lambdapnr.Kernel.ChecksumTest
     Lambdapnr.Kernel.DelayTest

@@ -16,6 +16,7 @@
 module Lambdapnr.Arch.Ecp5
   ( Ecp5
   , loadEcp5
+  , chipdbFileFor
   , ecp5Chipdb
   , ecp5Args
   , ecp5Bind
@@ -73,6 +74,22 @@ ecp5Chipdb = e5Chipdb
 
 ecp5Args :: Ecp5 -> Ecp5Args
 ecp5Args = e5Args
+
+-- | The chipdb blob for a device, mirroring @get_chip_info@: the 12k
+-- part shares the 25k database (nextpnr treats it as 25k silicon with
+-- the @LFE5U-12F@ name and 12k-specific bitstream handling).
+chipdbFileFor :: Ecp5Device -> FilePath
+chipdbFileFor dev = case dev of
+    Lfe5u12f -> "data/ecp5/chipdb-25k.bin"
+    Lfe5u25f -> "data/ecp5/chipdb-25k.bin"
+    Lfe5um25f -> "data/ecp5/chipdb-25k.bin"
+    Lfe5um5g25f -> "data/ecp5/chipdb-25k.bin"
+    Lfe5u45f -> "data/ecp5/chipdb-45k.bin"
+    Lfe5um45f -> "data/ecp5/chipdb-45k.bin"
+    Lfe5um5g45f -> "data/ecp5/chipdb-45k.bin"
+    Lfe5u85f -> "data/ecp5/chipdb-85k.bin"
+    Lfe5um85f -> "data/ecp5/chipdb-85k.bin"
+    Lfe5um5g85f -> "data/ecp5/chipdb-85k.bin"
 
 -- | The binding maps (bel/cell, wire/net, pip/net, wire fanout).
 ecp5Bind :: Ecp5 -> BindState

@@ -9,12 +9,13 @@ import Control.Monad (forM_)
 import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
+import Test.Tasty.HUnit (assertBool, assertEqual, assertFailure, testCase)
 
 import Lambdapnr.Arch.Ecp5
 import Lambdapnr.Arch.Ecp5.Chipdb (BelWire, Chipdb (..), LocationType (..), biBelWires, bwWireIndex, ltWires)
 import Lambdapnr.Arch.Ecp5.Types
 import Lambdapnr.Kernel.Arch
+import Lambdapnr.Kernel.IdString (IdString (..))
 import Lambdapnr.Kernel.Delay (dqMaxDelay, dqMinDelay)
 import Lambdapnr.Kernel.IdString (IdString (..))
 
@@ -117,9 +118,66 @@ ecp5Tests =
         assertEqual "same wire count" (length (getWires e1)) (length (getWires e2))
         assertEqual "same pip count" (length (getPips e1)) (length (getPips e2))
         assertEqual "same chip name" (getChipName e1) (getChipName e2)
+    , testCase "all device variants load and report identity" $ do
+        forM_ allDevices $ \dev -> do
+          r <- loadEcp5 (Ecp5Args dev "" Speed6) (chipdbFileFor dev)
+          case r of
+            Left err -> assertFailure ("load failed for " ++ show dev ++ ": " ++ err)
+            Right e -> do
+              assertEqual ("chip name " ++ show dev) (deviceName dev) (getChipName e)
+              assertEqual ("grid x " ++ show dev) (fst (deviceDims dev)) (getGridDimX e)
+              assertEqual ("grid y " ++ show dev) (snd (deviceDims dev)) (getGridDimY e)
+              assertEqual ("numTiles " ++ show dev) (getGridDimX e * getGridDimY e) (cdNumTiles (ecp5Chipdb e))
+              assertBool ("bels > 0 " ++ show dev) (not (null (getBels e)))
+              assertBool ("wires > 0 " ++ show dev) (not (null (getWires e)))
+              assertBool ("pips > 0 " ++ show dev) (not (null (getPips e)))
+    , testCase "12k shares the 25k chipdb" $ do
+        r <- loadEcp5 (Ecp5Args Lfe5u12f "" Speed6) (chipdbFileFor Lfe5u12f)
+        case r of
+          Left err -> assertFailure ("12k load failed: " ++ err)
+          Right e -> do
+            assertEqual "12k chip name" "LFE5U-12F" (getChipName e)
+            assertEqual "12k grid = 25k grid" 73 (getGridDimX e)
+            r25 <- loadEcp5 (Ecp5Args Lfe5u25f "" Speed6) (chipdbFileFor Lfe5u25f)
+            case r25 of
+              Left err -> assertFailure ("25k load failed: " ++ err)
+              Right e25 -> do
+                -- both served by the same blob: identical identity + scale
+                assertEqual "same grid" (getGridDimX e, getGridDimY e) (getGridDimX e25, getGridDimY e25)
+                assertEqual "same pip count" (length (getPips e)) (length (getPips e25))
+    , testCase "uphill/downhill consistency across devices (sampled)" $ do
+        forM_ allDevices $ \dev -> do
+          e <- loadEcp5 (Ecp5Args dev "" Speed6) (chipdbFileFor dev) >>= either (error . show) pure
+          let wires = sampled 2000 (getWires e)
+              badDown = [ (w, p) | w <- wires, p <- getPipsDownhill e w, getPipSrcWire e p /= w ]
+              badUp = [ (w, p) | w <- wires, p <- getPipsUphill e w, getPipDstWire e p /= w ]
+          assertEqual ("downhill " ++ show dev) [] (take 5 badDown)
+          assertEqual ("uphill " ++ show dev) [] (take 5 badUp)
     ]
   where
     -- helpers ------------------------------------------------------------
+
+    -- every device the port supports, with its grid dims
+    allDevices :: [Ecp5Device]
+    allDevices =
+        [ Lfe5u12f
+        , Lfe5u25f
+        , Lfe5u45f
+        , Lfe5u85f
+        , Lfe5um25f
+        , Lfe5um45f
+        , Lfe5um85f
+        , Lfe5um5g25f
+        , Lfe5um5g45f
+        , Lfe5um5g85f
+        ]
+
+    deviceDims :: Ecp5Device -> (Int, Int)
+    deviceDims d
+        | d `elem` [Lfe5u12f, Lfe5u25f, Lfe5um25f, Lfe5um5g25f] = (73, 51)
+        | d `elem` [Lfe5u45f, Lfe5um45f, Lfe5um5g45f] = (91, 72)
+        | otherwise = (127, 96)
+
 
     forBels :: Ecp5 -> (BelId -> IO ()) -> IO ()
     forBels e f = mapM_ f (take 300 (sampled 500 (getBels e)))

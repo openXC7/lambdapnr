@@ -1,38 +1,49 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-{- | nextpnr-haskell entry point.
+{- | lambdapnr entry point.
 
-Kernel milestone: prints version info and runs a quick RNG self-check
-(the first golden value of the xorshift64* stream). The pack/place/
-route CLI arrives with the first concrete arch.
+Mirrors nextpnr's @main.cc@ + @CommandHandler::exec@: no arguments or
+@-h\/--help@ prints the help to stderr, @-V\/--version@ prints the
+version banner, both exiting 0. Anything else parses against the option
+table and then fails with a clear error until the flow stages land (the
+exit code 125 matches the C++ @log_error@ path).
 -}
 module Main (main) where
 
-import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import Data.Word (Word64)
-import Numeric (showHex)
+import System.Environment (getArgs, getProgName)
+import System.Exit (ExitCode (..), exitSuccess, exitWith)
+import System.IO (hPutStrLn, stderr)
 
-import Lambdapnr.Kernel.DeterministicRng (newRng, rng64)
-
-version :: Text
-version = "0.1.0.0"
-
-goldenFirst :: Word64
-goldenFirst = 0x2d85a5b43ae712a7
+import Lambdapnr.CLI (Command (..), checkSingleDevice, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
 
 main :: IO ()
 main = do
-    TIO.putStrLn $
-        "lambdapnr " <> version <> " — Haskell FPGA place-and-route (kernel milestone)"
-    let (v, _) = rng64 newRng
-    TIO.putStrLn $
-        "  rng self-check: "
-            <> hexWord64 v
-            <> " == "
-            <> hexWord64 goldenFirst
-            <> if v == goldenFirst then "  [ok]" else "  [FAILED]"
-
-hexWord64 :: Word64 -> Text
-hexWord64 = T.pack . flip showHex ""
+    prog <- getProgName
+    args <- getArgs
+    case parseArgs (generalOptions ++ ecp5Options) args of
+        Left err -> do
+            hPutStrLn stderr (prog ++ ": " ++ err)
+            hPutStrLn stderr ("Try '" ++ prog ++ " --help' for more information.")
+            -- the C++ log_error path also exits 125
+            exitWith (ExitFailure 125)
+        Right cmd -> case cmd of
+            Help -> do
+                hPutStrLn stderr (renderHelp prog generalOptions ecp5Options)
+                exitSuccess
+            Version -> do
+                hPutStrLn stderr (versionLine prog)
+                exitSuccess
+            Run opts -> case checkSingleDevice opts of
+                Left err -> do
+                    hPutStrLn stderr (prog ++ ": " ++ err)
+                    exitWith (ExitFailure 125)
+                Right () ->
+                    if null opts
+                    then do
+                        -- no arguments at all: nextpnr also prints the help first
+                        hPutStrLn stderr (renderHelp prog generalOptions ecp5Options)
+                        hPutStrLn stderr (prog ++ ": no JSON design file specified")
+                        exitWith (ExitFailure 125)
+                    else do
+                        hPutStrLn stderr (prog ++ ": design flow not yet implemented (" ++ show (length opts) ++ " option(s) parsed)")
+                        exitWith (ExitFailure 125)
