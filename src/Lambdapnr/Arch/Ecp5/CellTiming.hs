@@ -20,8 +20,13 @@ module Lambdapnr.Arch.Ecp5.CellTiming (
     getCellDelayFor,
     getPortTimingClassFor,
     getPortClockingInfoFor,
+    getPortTimingClassAi,
+    getPortClockingInfoAi,
+    getCellDelayAi,
 ) where
 
+
+import Data.Bits (shiftR)
 import Data.Char (isDigit)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
@@ -31,10 +36,12 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 
 import Lambdapnr.Arch.Ecp5.Chipdb (CellPropDelay (..), CellSetupHold (..), CellTiming (..), SpeedGrade (..))
+import Lambdapnr.Arch.Ecp5.ArchCellInfo (ArchInfo (..), CombInfo (..), CombFlags (..), FfFlags (..), FfInfo (..), MultInfo (..), RamInfo (..), combFlag, ffFlag, hasFlag, lookupComb, lookupFf, lookupMult, lookupRam)
 import Lambdapnr.Arch.Ecp5.Types (BelId, PipId, WireId)
 import Lambdapnr.Kernel.Delay (DelayPair (..), DelayQuad, DelayT, dpFromDelay, dqFromDelay, dqScalar)
 import Lambdapnr.Kernel.IdString (IdString, IdTable, emptyId, idToText)
-import Lambdapnr.Kernel.Netlist (CellInfo, PortDir (..), PortInfo (..), cellPorts, cellType, portNet, portType)
+import Lambdapnr.Kernel.Netlist (CellInfo, PortDir (..), PortInfo (..), cellConstrZ, cellName, cellParams, cellPorts, cellType, portNet, portType)
+import Lambdapnr.Kernel.Property (Property, propAsInt64, propAsString, propIsString)
 import Lambdapnr.Kernel.Timing (ClockEdge (..), TimingClockingInfo (..), TimingPortClass (..))
 
 -- | The arch view the timing functions need.
@@ -401,6 +408,144 @@ getPortClockingInfoFor db cell port _index = chosen
                                         if cellType cell =: cid db "DQSBUFM"
                                             then dqsInfo
                                             else info
+
+{- | @getPortTimingClass@ with the packer payload: a TRELLIS_FF port
+@M@ is a register input only when the @FF_M_USED@ flag is set.
+-}
+getPortTimingClassAi :: TimingDb -> ArchInfo -> CellInfo BelId WireId PipId -> IdString -> (TimingPortClass, Int)
+getPortTimingClassAi db ai cell port =
+    let (cls, n) = getPortTimingClassFor db cell port
+        mUsed = hasFlag (fiFlags (lookupFf (cellName cell) ai)) (ffFlag FfMUsed)
+        -- DP16KD: the A/B half selects the clock, the direction picks
+        -- the register class (the C++ derives both from the port name)
+        ramCls
+            | cellType cell =: cid db "DP16KD"
+                && not (port `anyOf` [cid db "CLKA", cid db "CLKB"]) =
+                case lastNonDigit (resolve db port) of
+                    'A' -> Just (if portDirOf cell port == PortOut then TmgRegisterOutput else TmgRegisterInput, 1)
+                    'B' -> Just (if portDirOf cell port == PortOut then TmgRegisterOutput else TmgRegisterInput, 1)
+                    _ -> Nothing
+            | otherwise = Nothing
+        -- MULT18X18D: clocked multipliers turn the combinational ports
+        -- into registered ones
+        multCls
+            | cellType cell =: cid db "MULT18X18D" && miIsClocked (lookupMult (cellName cell) ai) =
+                case cls of
+                    TmgCombInput -> Just (TmgRegisterInput, 1)
+                    TmgCombOutput -> Just (TmgRegisterOutput, 1)
+                    _ -> Nothing
+            | otherwise = Nothing
+     in if cellType cell =: cid db "TRELLIS_FF" && port =: cid db "M" && mUsed
+            then (TmgRegisterInput, 1)
+            else maybe (maybe (cls, n) id multCls) id ramCls
+
+{- | @getPortClockingInfo@ with the packer payload: clock-inversion
+flags select the sensitive edge, and a TRELLIS_FF port @M@ (with
+@FF_M_USED@) gets the SLOGICB @M0@ setup\/hold check.
+-}
+getPortClockingInfoAi :: TimingDb -> ArchInfo -> CellInfo BelId WireId PipId -> IdString -> Int -> TimingClockingInfo
+getPortClockingInfoAi db ai cell port idx =
+    let info0 = getPortClockingInfoFor db cell port idx
+        ffInv = hasFlag (fiFlags (lookupFf (cellName cell) ai)) (ffFlag FfClkInv)
+        combInv = hasFlag (ciFlags (lookupComb (cellName cell) ai)) (combFlag CombRamWckInv)
+        ffEdge = if ffInv then FallingEdge else RisingEdge
+        combEdge = if combInv then FallingEdge else RisingEdge
+        ram = lookupRam (cellName cell) ai
+        ramHalfClock = case lastNonDigit (resolve db port) of
+            'A' -> cid db "CLKA"
+            'B' -> cid db "CLKB"
+            _ -> emptyId
+        ramClockPort
+            | riIsPdp ram =
+                if portDirOf cell port == PortOut || port `anyOf` [cid db "OCEB", cid db "CEB", cid db "ADB5", cid db "ADB6", cid db "ADB7", cid db "ADB8", cid db "ADB9", cid db "ADB10", cid db "ADB11", cid db "ADB12", cid db "ADB13"]
+                    then cid db "CLKB"
+                    else cid db "CLKA"
+            | otherwise = ramHalfClock
+        ramEdge =
+            if strOrDef (cellParams cell) (cid db (if ramClockPort =: cid db "CLKB" then "CLKBMUX" else "CLKAMUX")) "CLK" == "INV"
+                then FallingEdge
+                else RisingEdge
+        ramTimingId = riRegmodeTimingId ram
+        ramClocking
+            | ramHalfClock == emptyId = info0
+            | portDirOf cell port == PortOut =
+                info0{tciClockPort = ramClockPort, tciEdge = ramEdge, tciClockToQ = fromMaybe (dqFromDelay 0) (getDelayFromTmgDb db ramTimingId ramHalfClock port)}
+            | otherwise =
+                let (sh0, sh1) = fromMaybe (dpFromDelay 0, dpFromDelay 0) (getSetupholdFromTmgDb db ramTimingId ramHalfClock port)
+                 in info0{tciClockPort = ramClockPort, tciEdge = ramEdge, tciSetup = sh0, tciHold = sh1}
+        mult = lookupMult (cellName cell) ai
+        multPortGroup
+            | "A" `T.isPrefixOf` resolve db port = cid db "A"
+            | "B" `T.isPrefixOf` resolve db port = cid db "B"
+            | "P" `T.isPrefixOf` resolve db port = cid db "P"
+            | "CE" `T.isPrefixOf` resolve db port = cid db "CE0"
+            | "RST" `T.isPrefixOf` resolve db port = cid db "RST0"
+            | "SIGNED" `T.isPrefixOf` resolve db port = port
+            | otherwise = emptyId
+        multClocking
+            | multPortGroup == emptyId = info0
+            | portDirOf cell port == PortOut =
+                info0{tciClockPort = cid db "CLK0", tciClockToQ = fromMaybe (dqFromDelay 0) (getDelayFromTmgDb db (miTimingId mult) (cid db "CLK0") multPortGroup)}
+            | otherwise =
+                let (sh0, sh1) = fromMaybe (dpFromDelay 0, dpFromDelay 0) (getSetupholdFromTmgDb db (miTimingId mult) (cid db "CLK0") multPortGroup)
+                 in info0{tciClockPort = cid db "CLK0", tciSetup = sh0, tciHold = sh1}
+     in if cellType cell =: cid db "TRELLIS_FF" && port =: cid db "M" && hasFlag (fiFlags (lookupFf (cellName cell) ai)) (ffFlag FfMUsed)
+            then
+                let (sh0, sh1) = fromMaybe (dpFromDelay 0, dpFromDelay 0) (getSetupholdFromTmgDb db (cid db "SLOGICB") (cid db "CLK") (cid db "M0"))
+                 in info0{tciClockPort = cid db "CLK", tciEdge = ffEdge, tciSetup = sh0, tciHold = sh1}
+            else
+                if cellType cell =: cid db "TRELLIS_FF"
+                    then info0{tciEdge = ffEdge}
+                    else
+                        if cellType cell =: cid db "TRELLIS_COMB"
+                            then info0{tciEdge = combEdge}
+                            else
+                                if cellType cell =: cid db "DP16KD" && not (port `anyOf` [cid db "CLKA", cid db "CLKB"])
+                                    then ramClocking
+                                    else
+                                        if cellType cell =: cid db "MULT18X18D" && not (port `anyOf` [cid db "CLK0", cid db "CLK1", cid db "CLK2", cid db "CLK3"])
+                                            then multClocking
+                                            else info0
+
+{- | @getCellDelay@ with the packer payload: unclocked MULT18X18D
+@A\/Bn -> Pn@ arcs (the C++ consults @multInfo@).
+-}
+getCellDelayAi :: TimingDb -> ArchInfo -> CellInfo BelId WireId PipId -> IdString -> IdString -> Maybe DelayQuad
+getCellDelayAi db ai cell from to
+    | cellType cell =: cid db "TRELLIS_COMB"
+        && hasFlag (ciFlags (lookupComb (cellName cell) ai)) (combFlag CombCarry) =
+        -- carry chains select TRELLIS_COMB_CARRY0/1 by slice z
+        let tmgType =
+                if ((cellConstrZ cell `shiftR` 2) `mod` 2) == 1
+                    then cid db "TRELLIS_COMB_CARRY1"
+                    else cid db "TRELLIS_COMB_CARRY0"
+         in if from `anyOf` [cid db "A", cid db "B", cid db "C", cid db "D", cid db "M", cid db "F1", cid db "FXA", cid db "FXB", cid db "FCI"]
+                then getDelayFromTmgDb db tmgType from to
+                else Nothing
+    | otherwise =
+        case getCellDelayFor db cell from to of
+            Just dq -> Just dq
+            Nothing
+                | cellType cell =: cid db "MULT18X18D"
+                    && not (miIsClocked (lookupMult (cellName cell) ai)) ->
+                    let fn = resolve db from
+                        tn = resolve db to
+                     in if T.length fn > 1
+                            && (T.head fn == 'A' || T.head fn == 'B')
+                            && isDigit (T.index fn 1)
+                            && T.length tn > 1
+                            && T.head tn == 'P'
+                            && isDigit (T.index tn 1)
+                            then getDelayFromTmgDb db (miTimingId (lookupMult (cellName cell) ai)) (cid db (T.singleton (T.head fn))) (cid db "P")
+                            else Nothing
+                | otherwise -> Nothing
+
+-- | @str_or_default@ (local copy of the ArchCellInfo helper).
+strOrDef :: Map IdString Property -> IdString -> String -> String
+strOrDef m k def =
+    case M.lookup k m of
+        Nothing -> def
+        Just p -> if propIsString p then T.unpack (propAsString p) else show (propAsInt64 p)
 
 -- helpers ----------------------------------------------------------------
 

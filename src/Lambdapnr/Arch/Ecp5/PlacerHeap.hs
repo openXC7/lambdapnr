@@ -14,17 +14,22 @@ module Lambdapnr.Arch.Ecp5.PlacerHeap
   ) where
 
 import qualified Data.Map.Strict as M
+import Control.Monad (forM_, when)
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import System.Environment (lookupEnv)
 import System.IO (hPutStrLn, stderr)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Lambdapnr.Arch.Ecp5
 import Lambdapnr.Arch.Ecp5.Types (BelId, PipId, WireId)
-import Lambdapnr.Arch.Ecp5.ArchCellInfo (assignArchInfo, slicesCompatible)
+import Lambdapnr.Kernel.Delay (DelayPair (..))
+import Lambdapnr.Kernel.TimingAnalyser (ArrivReqTime (..), CellPortKey (..), PerDomain (..), PerDomainPair (..), PerPort (..), PortDomainPairData (..), TimingAnalyser (..), buildTimingAnalyser, criticalityOf)
+import Lambdapnr.Arch.Ecp5.ArchCellInfo (CombInfo (..), assignArchInfo, lookupComb, lookupFf, slicesCompatible)
+import Lambdapnr.Arch.Ecp5.CellTiming (getCellDelayAi, getPortClockingInfoAi, getPortTimingClassAi)
 import Lambdapnr.Arch.Ecp5.Binding (bindBel, boundBelCell, unbindBel)
 import Lambdapnr.Arch.Ecp5.Chipdb (belAt, biZ)
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), Ecp5Device (..), Location (..), eaDevice)
@@ -35,7 +40,7 @@ import Foreign.C.Types (CDouble (..), CInt (..))
 import Foreign.Storable (peek, poke)
 import Lambdapnr.Kernel.IdString (IdString (..), IdTable, emptyId, idToText, intern)
 import Lambdapnr.Kernel.Netlist
-import Lambdapnr.Kernel.Property (propAsString)
+import Lambdapnr.Kernel.Property (propAsString, propFromString)
 
 -- | The placer's per-cell location record (@CellLocation@).
 data CellLoc = CellLoc
@@ -465,17 +470,23 @@ solveEqSys tol (EqSys cols rhs) guess =
 foreign import ccall unsafe "lp_solve_cg"
     c_lpSolveCg :: CInt -> Ptr CInt -> Ptr CInt -> Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CDouble -> Ptr CDouble -> IO CInt
 
+{-# NOINLINE arcDbgRef #-}
+arcDbgRef :: IORef Int
+arcDbgRef = unsafePerformIO (newIORef (0 :: Int))
+
 -- | @build_equations@ for one axis. @udata@ maps solve cells to rows;
 -- any other cell is @dont_solve@.
 buildEquations ::
     (IdString -> String) ->
+    (IdString -> IdString -> Float) ->
+    Bool ->
     Design BelId WireId PipId ->
     M.Map IdString CellLoc ->
     [IdString] ->
     M.Map IdString Int ->
     Bool ->
     EqSys
-buildEquations nm d locs solveCells udata yaxis =
+buildEquations nm critOf dumpArcs d locs solveCells udata yaxis =
     let nets = netsIter d
         (es, nPass) = foldl netEq (emptyEqSys (length solveCells), 0 :: Int) nets
         dbg =
@@ -538,20 +549,33 @@ buildEquations nm d locs solveCells udata yaxis =
                         else
                             let oPos = fromIntegral (cellPos (fst3 other))
                                 thisPos = fromIntegral (cellPos (fst3 p))
-                                -- timing criticality is 0 until the
-                                -- timing engine lands (weight multiplier
-                                -- becomes 1.0)
-                                w =
+                                base =
                                     1.0
                                         / ( fromIntegral (numUsers ni)
                                                 * max 1 ((if yaxis then 1 else 1) * abs (oPos - thisPos))
                                           )
+                                _arcDbg =
+                                    unsafePerformIO $ do
+                                        want <- lookupEnv "LP_DUMP_ARC"
+                                        case want of
+                                            Just _ ->
+                                                when dumpArcs $
+                                                    hPutStrLn stderr ("LPDBG arc " ++ nm (fst3 other) ++ "." ++ nm (snd3 other) ++ " -> " ++ nm (fst3 p) ++ "." ++ nm (snd3 p) ++ " o=" ++ show (round oPos) ++ " t=" ++ show (round thisPos) ++ " w=" ++ show base ++ " y=" ++ show yaxis)
+                                            Nothing -> pure ()
+                                -- cfg.timingWeight * pow(crit, cfg.criticalityExponent),
+                                -- ECP5: timingWeight = 10, criticalityExponent = 4;
+                                -- user ports only (the C++ checks user_idx)
+                                w =
+                                    if thd3 p
+                                        then base * (1.0 + 10.0 * (realToFrac (critOf (fst3 p) (snd3 p)) ** 4))
+                                        else base
 
-                             in stamp (stamp (stamp (stamp es' p p w) p other (-w)) other other w) other p (-w)
+                             in _arcDbg `seq` stamp (stamp (stamp (stamp es' p p w) p other (-w)) other other w) other p (-w)
                 arcEq es' p = processArc (processArc es' p lbp) p ubp
              in (foldl arcEq es ports, n + 1)
     fst3 (c, _, _) = c
     snd3 (_, p, _) = p
+    thd3 (_, _, b) = b
 
 -- | @solve_equations@ for one axis: solve, then write the positions
 -- back (truncation toward zero + clamp).
@@ -568,12 +592,18 @@ solveAxis d maxX maxY locs solveCells es yaxis =
     let locOf c = M.findWithDefault (CellLoc 0 0 0 0 False False) c locs
         guess = [fromIntegral (if yaxis then plcY (locOf c) else plcX (locOf c)) | c <- solveCells]
         out = solveEqSys 1e-5 es guess
+        _dbg =
+            unsafePerformIO $ do
+                want <- lookupEnv "LP_DUMP_SOLVE"
+                case want of
+                    Just _ -> hPutStrLn stderr ("LPDBG solve y=" ++ show yaxis ++ " out=" ++ show (take 6 out) ++ " guess=" ++ show (take 6 guess))
+                    Nothing -> pure ()
         go acc (c, v) =
             let l = locOf c
              in if yaxis
                     then M.insert c l{plcRawY = v, plcY = max 0 (min maxY (truncate v))} acc
                     else M.insert c l{plcRawX = v, plcX = max 0 (min maxX (truncate v))} acc
-     in foldl go locs (zip solveCells out)
+     in _dbg `seq` foldl go locs (zip solveCells out)
 
 -- | The 4 initial solve iterations of @place()@ (build + solve each
 -- axis 5 times, then chain-update and report).
@@ -584,17 +614,33 @@ placeHeapInitialIters ::
     PlacerState ->
     IO PlacerState
 placeHeapInitialIters e cidOf d ps0 = do
-    writeFile "/tmp/hs_net_names.txt" (unlines [T.unpack (idToText (ecp5IdTable e) (netName ni)) | ni <- netsIter d])
-    go ps0 (0 :: Int)
+    let db = ecp5TimingDb e
+        ai = assignArchInfo cidOf d
+        isGlobNet ni = maybe False (const True) (M.lookup (fromMaybe emptyId (cidOf "ECP5_IS_GLOBAL")) (netAttrs ni))
+        tmg = buildTimingAnalyser e (getPortTimingClassAi db ai) (getPortClockingInfoAi db ai) (getCellDelayAi db ai) isGlobNet True d
+        critOf cell port = criticalityOf tmg (CellPortKey cell port)
+    go critOf ps0 (0 :: Int)
   where
-    go ps i
+    go critOf ps i
         | i >= 4 = pure ps
         | otherwise = do
             let solveCells = psPlaceCells ps
-                udata = M.fromList (zip solveCells [0 ..])
+                udata0 = M.fromList (zip solveCells [0 ..])
+                -- cluster children share the root's row (the C++
+                -- setup_solve_cells assigns child->udata from the
+                -- cluster root)
+                udata =
+                    udata0
+                        `M.union` M.fromList
+                            [ (cellName ci, row)
+                            | (root, row) <- M.toList udata0
+                            , ci <- cellsIter d
+                            , cellCluster ci == root
+                            , cellName ci /= root
+                            ]
                 solveDirection yaxis pAcc =
                     let step (nStep, pAcc') _ =
-                            let es = buildEquations (\n -> T.unpack (idToText (ecp5IdTable e) n)) d (psLocs pAcc') solveCells udata yaxis
+                            let es = buildEquations (\n -> T.unpack (idToText (ecp5IdTable e) n)) critOf (i == 0 && nStep == 1) d (psLocs pAcc') solveCells udata yaxis
                                 dbg =
                                     if i == 0 && not yaxis && nStep <= 2
                                         then
@@ -619,4 +665,4 @@ placeHeapInitialIters e cidOf d ps0 = do
                 ps3 = ps2{psLocs = updateAllChains d (psLocs ps2) solveCells (psMaxX ps2) (psMaxY ps2)}
                 hpwl = totalHpwl d (psLocs ps3)
             hPutStrLn stderr ("    at initial placer iter " ++ show i ++ ", wirelen = " ++ show hpwl)
-            go ps3 (i + 1)
+            go critOf ps3 (i + 1)

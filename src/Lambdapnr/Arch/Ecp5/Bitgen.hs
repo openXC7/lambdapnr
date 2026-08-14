@@ -32,7 +32,7 @@ import qualified Data.Vector as V
 import System.IO.Unsafe (unsafePerformIO)
 
 import Lambdapnr.Arch.Ecp5 hiding (locX, locY, locZ)
-import Lambdapnr.Arch.Ecp5.ArchCellInfo (ArchInfo, CombInfo (..), RamInfo (..), combFlag, lookupComb, lookupRam, CombFlags (CombCarry))
+import Lambdapnr.Arch.Ecp5.ArchCellInfo (ArchInfo, CombInfo (..), RamInfo (..), combFlag, hasFlag, lookupComb, lookupRam, CombFlags (CombCarry))
 import Lambdapnr.Arch.Ecp5.BaseConfigs (configEmpty)
 import Lambdapnr.Arch.Ecp5.Binding (boundPipNet, boundWireNet)
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
@@ -439,7 +439,7 @@ buildConfig e ai design settings =
             usedPins = S.fromList [ fst (ports !! i) | i <- [0 .. 3], not (null (physToLog !! i)) ]
             -- CCU2 carry: keep the two halves split
             physToLog' =
-                if combFlag CombCarry `testFlag` (ciFlags (lookupComb (cellName cell) ai))
+                if hasFlag (ciFlags (lookupComb (cellName cell) ai)) (combFlag CombCarry)
                     then [ if null (physToLog !! i)
                             then [j | j <- [2 * (i `div` 2) .. 2 * (i `div` 2 + 1) - 1], boundWireNet (belPinWireOf (fromMaybe (error "unplaced") (cellBel cell)) (cid (fst (ports !! j)))) (ecp5Bind e) == Nothing]
                             else physToLog !! i
@@ -451,7 +451,6 @@ buildConfig e ai design settings =
                  in if origInit `div` (2 ^ logIdx) `mod` 2 == 1 then acc .|. (1 `shiftL` i) else acc
          in (usedPins, permutedInit)
       where
-        testFlag flag flags = flags `div` (2 ^ flag) `mod` 2 == 1
         shiftL = \x n -> x * (2 ^ n)
         ciFlags (CombInfo f _ _ _) = f
 

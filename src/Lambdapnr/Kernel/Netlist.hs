@@ -100,7 +100,8 @@ setCellPort cell port dir d =
         Nothing -> d
         Just ci ->
             let pi = PortInfo{portName = port, portNet = Nothing, portType = dir, portUserIdx = 0}
-             in d{designCells = M.insert cell (ci{cellPorts = M.insert port pi (cellPorts ci)}) (designCells d)}
+                order = if M.member port (cellPorts ci) then cellPortOrder ci else cellPortOrder ci ++ [port]
+             in d{designCells = M.insert cell (ci{cellPorts = M.insert port pi (cellPorts ci), cellPortOrder = order}) (designCells d)}
 
 -- | Clear a cell's bel binding (@cell->bel = BelId()@).
 clearCellBel :: IdString -> Design bel wire pip -> Design bel wire pip
@@ -183,6 +184,9 @@ data CellInfo bel wire pip = CellInfo
     , cellType :: !IdString
     , cellHierpath :: !IdString
     , cellPorts :: !(Map IdString PortInfo)
+    , cellPortOrder :: [IdString]
+    -- ^ Port insertion order, mirroring nextpnr's @dict@ container
+    -- (iteration order is the reverse of this list)
     , cellAttrs :: !(Map IdString Property)
     , cellParams :: !(Map IdString Property)
     , cellBel :: !(Maybe bel)
@@ -428,6 +432,15 @@ setCellAttr cell key value d =
         Nothing -> d
         Just ci -> d{designCells = M.insert cell (ci{cellAttrs = M.insert key value (cellAttrs ci)}) (designCells d)}
 
+-- | @dict@-erase order update: the back entry moves into the erased slot.
+swapRemovePort :: (Eq a) => a -> [a] -> [a]
+swapRemovePort _ [] = []
+swapRemovePort x xs = case break (== x) xs of
+    (_, []) -> xs
+    (pre, _ : post) -> case post of
+        [] -> pre
+        _ -> pre ++ [last post] ++ init post
+
 -- | Rename a cell port (@ci->renamePort(old, new)@): the port and its
 -- net connection move to the new name.
 renameCellPort :: IdString -> IdString -> IdString -> Design bel wire pip -> Design bel wire pip
@@ -438,8 +451,8 @@ renameCellPort cell old new d =
             case M.lookup old (cellPorts ci) of
                 Nothing -> d
                 Just pi ->
-                    let ci1 = ci{cellPorts = M.delete old (cellPorts ci)}
-                        ci2 = ci1{cellPorts = M.insert new (pi{portName = new}) (cellPorts ci1)}
+                    let ci1 = ci{cellPorts = M.delete old (cellPorts ci), cellPortOrder = swapRemovePort old (cellPortOrder ci)}
+                        ci2 = ci1{cellPorts = M.insert new (pi{portName = new}) (cellPorts ci1), cellPortOrder = cellPortOrder ci1 ++ [new]}
                         d1 = d{designCells = M.insert cell ci2 (designCells d)}
                      in case portNet pi of
                             Nothing -> d1
@@ -508,7 +521,16 @@ removeCellPort cell port d =
                 Just pi ->
                     let d1 = disconnectPort cell port d
                         ci' = maybe ci id (lookupCell cell d1)
-                     in d1{designCells = M.insert cell (ci'{cellPorts = M.delete port (cellPorts ci')}) (designCells d1)}
+                        order = swapRemove port (cellPortOrder ci')
+                     in d1{designCells = M.insert cell (ci'{cellPorts = M.delete port (cellPorts ci'), cellPortOrder = order}) (designCells d1)}
+    where
+        -- dict erase: the back entry moves into the erased slot
+        swapRemove _ [] = []
+        swapRemove x xs = case break (== x) xs of
+            (_, []) -> xs
+            (pre, _ : post) -> case post of
+                [] -> pre
+                _ -> pre ++ [last post] ++ init post
 
 -- | Rename a net (@ctx->renameNet(old, new)@): all references follow.
 renameNet :: IdString -> IdString -> Design bel wire pip -> Design bel wire pip

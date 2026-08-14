@@ -17,6 +17,7 @@ module Lambdapnr.Arch.Ecp5.ArchCellInfo (
     emptyArchInfo,
     combFlag,
     ffFlag,
+    hasFlag,
     lookupComb,
     lookupFf,
     lookupRam,
@@ -28,7 +29,7 @@ module Lambdapnr.Arch.Ecp5.ArchCellInfo (
     belRamwZ,
 ) where
 
-import Data.Bits (shiftL, testBit, (.|.))
+import Data.Bits (shiftL, (.&.), (.|.))
 import Debug.Trace (trace)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
@@ -53,7 +54,14 @@ data CombFlags
     deriving (Eq, Show, Enum)
 
 combFlag :: CombFlags -> Int
-combFlag = fromEnum
+combFlag CombNone = 0x00
+combFlag CombCarry = 0x01
+combFlag CombLutram = 0x02
+combFlag CombMux5 = 0x04
+combFlag CombMux6 = 0x08
+combFlag CombRamWckInv = 0x10
+combFlag CombRamWreInv = 0x20
+combFlag CombRamwBlock = 0x40
 
 -- | @ArchCellInfo::FFFlags@.
 data FfFlags
@@ -68,7 +76,18 @@ data FfFlags
     deriving (Eq, Show, Enum)
 
 ffFlag :: FfFlags -> Int
-ffFlag = fromEnum
+ffFlag FfNone = 0x00
+ffFlag FfClkInv = 0x01
+ffFlag FfCeInv = 0x02
+ffFlag FfCeConst = 0x04
+ffFlag FfLsrInv = 0x08
+ffFlag FfGsrEn = 0x10
+ffFlag FfAsync = 0x20
+ffFlag FfMUsed = 0x40
+
+-- | Mask-based flag test (the C++ @flags & FLAG@).
+hasFlag :: Int -> Int -> Bool
+hasFlag flags mask = (flags .&. mask) /= 0
 
 -- | The comb payload (@combInfo@).
 data CombInfo = CombInfo
@@ -321,27 +340,27 @@ slicesCompatible slotCell =
                         Nothing -> (True, False)
                         Just (c, ai) ->
                             let flags = ciFlags (lookupComb (cellName c) ai)
-                                okRamw = not (ramwUsed && not (testBit flags (combFlag CombRamwBlock)))
-                                okMux5 = not (testBit flags (combFlag CombMux5) && l /= 0)
-                                okMux6 = not (testBit flags (combFlag CombMux6) && l /= 1)
+                                okRamw = not (ramwUsed && not (hasFlag flags (combFlag CombRamwBlock)))
+                                okMux5 = not (hasFlag flags (combFlag CombMux5) && l /= 0)
+                                okMux6 = not (hasFlag flags (combFlag CombMux6) && l /= 1)
                                 okMuxRoot =
                                     case ciMuxFxad (lookupComb (cellName c) ai) of
                                         Just fxad
-                                            | testBit flags (combFlag CombMux6) ->
+                                            | hasFlag flags (combFlag CombMux6) ->
                                                 let fxadFlags = ciFlags (lookupComb fxad ai)
-                                                 in not (testBit fxadFlags (combFlag CombMux5) && (sl /= 0 && sl /= 2))
+                                                 in not (hasFlag fxadFlags (combFlag CombMux5) && (sl /= 0 && sl /= 2))
                                         _ -> True
-                                okLutram = not (testBit flags (combFlag CombLutram) && sl > 1)
+                                okLutram = not (hasFlag flags (combFlag CombLutram) && sl > 1)
                                 okCarryPair =
                                     if l == 1
                                         then case slotCell (((sl * 2 + 0) `shiftL` lcIdxShift) .|. belCombZ) of
                                             Just (c0, ai0) ->
-                                                testBit (ciFlags (lookupComb (cellName c0) ai0)) (combFlag CombCarry)
-                                                    == testBit flags (combFlag CombCarry)
+                                                hasFlag (ciFlags (lookupComb (cellName c0) ai0)) (combFlag CombCarry)
+                                                    == hasFlag flags (combFlag CombCarry)
                                             Nothing -> True
                                         else True
                              in ( okRamw && okMux5 && okMux6 && okMuxRoot && okLutram && okCarryPair
-                                , testBit flags (combFlag CombMux5) || testBit flags (combFlag CombMux6)
+                                , hasFlag flags (combFlag CombMux5) || hasFlag flags (combFlag CombMux6)
                                 )
                     -- ff checks
                     (okPrev, foundFfPrev, lastFlags, lastCe) = acc
@@ -349,14 +368,14 @@ slicesCompatible slotCell =
                         Nothing -> (ok0, foundFfPrev, lastFlags, lastCe)
                         Just (c, ai) ->
                             let FfInfo flags _ _ ceSig _ = lookupFf (cellName c) ai
-                                okM = not (combMUsed && testBit flags (ffFlag FfMUsed))
+                                okM = not (combMUsed && hasFlag flags (ffFlag FfMUsed))
                              in if foundFfPrev
                                     then
                                         ( okPrev
                                             && okM
-                                            && testBit flags (ffFlag FfGsrEn) == testBit lastFlags (ffFlag FfGsrEn)
-                                            && testBit flags (ffFlag FfCeConst) == testBit lastFlags (ffFlag FfCeConst)
-                                            && testBit flags (ffFlag FfCeInv) == testBit lastFlags (ffFlag FfCeInv)
+                                            && hasFlag flags (ffFlag FfGsrEn) == hasFlag lastFlags (ffFlag FfGsrEn)
+                                            && hasFlag flags (ffFlag FfCeConst) == hasFlag lastFlags (ffFlag FfCeConst)
+                                            && hasFlag flags (ffFlag FfCeInv) == hasFlag lastFlags (ffFlag FfCeInv)
                                             && ceSig == lastCe
                                         , True
                                         , lastFlags
@@ -377,10 +396,10 @@ slicesCompatible slotCell =
                     if i < 4
                         then case slotCell ((i `shiftL` lcIdxShift) .|. belCombZ) of
                             Just (c, ai)
-                                | testBit (ciFlags (lookupComb (cellName c) ai)) (combFlag CombLutram) ->
+                                | hasFlag (ciFlags (lookupComb (cellName c) ai)) (combFlag CombLutram) ->
                                     let flags = ciFlags (lookupComb (cellName c) ai)
-                                        thisCkInv = testBit flags (combFlag CombRamWckInv)
-                                        thisLsInv = testBit flags (combFlag CombRamWreInv)
+                                        thisCkInv = hasFlag flags (combFlag CombRamWckInv)
+                                        thisLsInv = hasFlag flags (combFlag CombRamWreInv)
                                      in if foundGd
                                             then (ok && thisCkInv == clkInv && thisLsInv == lsrInv, True, clkInv, lsrInv)
                                             else (ok, True, thisCkInv, thisLsInv)
@@ -391,9 +410,9 @@ slicesCompatible slotCell =
                         Nothing -> (ok0, foundGf, clkInv1, lsrInv1, async, clkSig, lsrSig)
                         Just (c, ai) ->
                             let FfInfo flags clkSigF lsrSigF _ _ = lookupFf (cellName c) ai
-                                thisCkInv = testBit flags (ffFlag FfClkInv)
-                                thisLsInv = testBit flags (ffFlag FfLsrInv)
-                                thisAsync = testBit flags (ffFlag FfAsync)
+                                thisCkInv = hasFlag flags (ffFlag FfClkInv)
+                                thisLsInv = hasFlag flags (ffFlag FfLsrInv)
+                                thisAsync = hasFlag flags (ffFlag FfAsync)
                              in if foundGf
                                     then
                                         ( ok0

@@ -27,6 +27,7 @@ mkCell name typ =
         , cellType = typ
         , cellHierpath = IdString 0
         , cellPorts = M.empty
+        , cellPortOrder = []
         , cellAttrs = M.empty
         , cellParams = M.empty
         , cellBel = Nothing

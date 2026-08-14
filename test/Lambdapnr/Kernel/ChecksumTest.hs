@@ -49,6 +49,7 @@ slice =
                 , (i 4, PortInfo (i 4) Nothing PortIn 1)
                 , (i 5, PortInfo (i 5) Nothing PortOut 0)
                 ]
+        , cellPortOrder = [i 3, i 4, i 5]
         , cellAttrs = M.singleton (i 20) (propFromInt 5 16)
         , cellParams = M.singleton (i 21) (propFromInt 1 32)
         , cellBel = Just 42
@@ -68,6 +69,7 @@ drv =
         , cellType = i 11
         , cellHierpath = i 0
         , cellPorts = M.fromList [(i 6, PortInfo (i 6) Nothing PortOut 0)]
+        , cellPortOrder = [i 6]
         , cellAttrs = M.empty
         , cellParams = M.empty
         , cellBel = Nothing

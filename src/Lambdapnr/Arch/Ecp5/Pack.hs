@@ -308,7 +308,7 @@ cellTemplate pk typ =
         mkOut p = (cid pk p, PortInfo (cid pk p) Nothing PortOut 0)
         mkInout p = (cid pk p, PortInfo (cid pk p) Nothing PortInout 0)
         portsOf = M.fromList
-        cell0 = CellInfo emptyId typ emptyId M.empty M.empty M.empty Nothing StrengthNone emptyId 0 0 0 False []
+        cell0 = CellInfo emptyId typ emptyId M.empty [] M.empty M.empty Nothing StrengthNone emptyId 0 0 0 False []
         paramsOf ps = M.fromList [(cid pk k, v) | (k, v) <- ps]
         attrsOf as = M.fromList [(cid pk k, v) | (k, v) <- as]
      in if tp == "TRELLIS_COMB"
@@ -326,6 +326,7 @@ cellTemplate pk typ =
                             ( map mkIn ["A", "B", "C", "D", "M", "F1", "FCI", "FXA", "FXB", "DI0", "DI1", "WD", "WAD0", "WAD1", "WAD2", "WAD3", "WRE", "WCK"]
                                 ++ map mkOut ["F", "FCO", "OFX"]
                             )
+                    , cellPortOrder = map (cid pk) ["A", "B", "C", "D", "M", "F1", "FCI", "FXA", "FXB", "DI0", "DI1", "WD", "WAD0", "WAD1", "WAD2", "WAD3", "WRE", "WCK", "F", "FCO", "OFX"]
                     }
                 , portsOf
                     ( map mkIn ["A", "B", "C", "D", "M", "F1", "FCI", "FXA", "FXB", "DI0", "DI1", "WD", "WAD0", "WAD1", "WAD2", "WAD3", "WRE", "WCK"]
@@ -341,6 +342,7 @@ cellTemplate pk typ =
                                     ( map mkIn ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"]
                                         ++ map mkOut ["WDO0", "WDO1", "WDO2", "WDO3", "WADO0", "WADO1", "WADO2", "WADO3"]
                                     )
+                            , cellPortOrder = map (cid pk) ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1", "WDO0", "WDO1", "WDO2", "WDO3", "WADO0", "WADO1", "WADO2", "WADO3"]
                             }
                         , portsOf
                             ( map mkIn ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"]
@@ -360,10 +362,11 @@ cellTemplate pk typ =
                                     , cellAttrs = attrsOf [("IO_TYPE", PropStr "LVCMOS33")]
                                     , cellPorts =
                                         portsOf
-                                            ( mkInout "B" : map mkIn ["I", "T", "IOLDO", "IOLTO"] ++ [mkOut "O"]
+                                            ( mkInout "B" : map mkIn ["I", "T"] ++ [mkOut "O"] ++ map mkIn ["IOLDO", "IOLTO"]
                                             )
+                                    , cellPortOrder = map (cid pk) ["B", "I", "T", "O", "IOLDO", "IOLTO"]
                                     }
-                                , portsOf (mkInout "B" : map mkIn ["I", "T", "IOLDO", "IOLTO"] ++ [mkOut "O"])
+                                , portsOf (mkInout "B" : map mkIn ["I", "T"] ++ [mkOut "O"] ++ map mkIn ["IOLDO", "IOLTO"])
                                 )
                             else
                                 if tp == "LUT4"
@@ -371,6 +374,7 @@ cellTemplate pk typ =
                                         ( cell0
                                             { cellParams = paramsOf [("INIT", propFromInt 0 16)]
                                             , cellPorts = portsOf (map mkIn ["A", "B", "C", "D"] ++ [mkOut "Z"])
+                                            , cellPortOrder = map (cid pk) ["A", "B", "C", "D", "Z"]
                                             }
                                         , portsOf (map mkIn ["A", "B", "C", "D"] ++ [mkOut "Z"])
                                         )
@@ -391,6 +395,7 @@ cellTemplate pk typ =
                                                                 : map mkIn ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"]
                                                                     ++ map mkOut ["S0", "S1", "COUT"]
                                                             )
+                                                    , cellPortOrder = map (cid pk) (["CIN"] ++ ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"] ++ ["S0", "S1", "COUT"])
                                                     }
                                                 , portsOf
                                                     ( mkIn "CIN"
@@ -402,7 +407,9 @@ cellTemplate pk typ =
                                                 if tp == "DCCA"
                                                     then
                                                         ( cell0
-                                                            { cellPorts = portsOf [mkIn "CLKI", mkOut "CLKO", mkIn "CE"] }
+                                                            { cellPorts = portsOf [mkIn "CLKI", mkOut "CLKO", mkIn "CE"]
+                                                            , cellPortOrder = map (cid pk) ["CLKI", "CLKO", "CE"]
+                                                            }
                                                         , portsOf [mkIn "CLKI", mkOut "CLKO", mkIn "CE"]
                                                         )
                                                     else
@@ -447,12 +454,14 @@ cellTemplate pk typ =
                                                                                     )
                                                                                     params
                                                                             else params
-                                                                 in (cell0{cellParams = params', cellPorts = belPorts}, belPorts)
+                                                                 in (cell0{cellParams = params', cellPorts = belPorts, cellPortOrder = M.keys belPorts}, belPorts)
                                                             else
                                                                 if tp == "TRELLIS_ECLKBUF"
                                                                     then
                                                                         ( cell0
-                                                                            { cellPorts = portsOf [mkIn "ECLKI", mkOut "ECLKO"] }
+                                                                            { cellPorts = portsOf [mkIn "ECLKI", mkOut "ECLKO"]
+                                                                            , cellPortOrder = map (cid pk) ["ECLKI", "ECLKO"]
+                                                                            }
                                                                         , portsOf [mkIn "ECLKI", mkOut "ECLKO"]
                                                                         )
                                                                     else error ("unable to create ECP5 cell of type " ++ T.unpack tp)
