@@ -24,8 +24,10 @@ module Lambdapnr.Kernel.DeterministicRng (
 
 import Data.Bits (shiftL, shiftR, xor, (.&.), (.|.))
 import Data.List (sort)
+import Control.Monad.ST (runST)
 import Data.Vector (Vector)
 import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as VM
 import Data.Word (Word32, Word64)
 
 -- | RNG state (the xorshift64* state word).
@@ -97,28 +99,29 @@ ceilPow2 n =
 swap element @i@ with element @i + rng(size - i)@ when the latter is
 strictly greater.
 
-O(n^2) on immutable vectors (V.swap copies); the production hot paths
-should switch to a mutable ST implementation with the same draw
-sequence. The /draw sequence/ is what determinism goldens pin, not the
-data structure.
+ST-backed with the same draw sequence (the goldens pin the draws, not
+the data structure).
 -}
 shuffle :: Rng -> Vector a -> (Vector a, Rng)
-shuffle r0 v0 = go r0 0 v0
-  where
-    n = V.length v0
-    go r i v
-        | i >= n = (v, r)
-        | otherwise =
-            let (j, r') = rngBounded (n - i) r
-                j' = i + j
-                v' = if j' > i then swapVec i j' v else v
-             in go r' (i + 1) v'
-
-{- | O(n) immutable swap (Data.Vector has no 'swap'); the hot paths will
-move to a mutable ST implementation.
--}
-swapVec :: Int -> Int -> Vector a -> Vector a
-swapVec i j v = v V.// [(i, v V.! j), (j, v V.! i)]
+shuffle r0 v0 = runST $ do
+    mv <- V.thaw v0
+    let n = V.length v0
+        go r i
+            | i >= n = do
+                v' <- V.freeze mv
+                pure (v', r)
+            | otherwise = do
+                let (j, r') = rngBounded (n - i) r
+                    j' = i + j
+                if j' > i
+                    then do
+                        vi <- VM.read mv i
+                        vj <- VM.read mv j'
+                        VM.write mv i vj
+                        VM.write mv j' vi
+                    else pure ()
+                go r' (i + 1)
+    go r0 0
 
 -- | Sort, then shuffle (@sorted_shuffle@ in C++).
 sortedShuffle :: (Ord a) => Rng -> Vector a -> (Vector a, Rng)

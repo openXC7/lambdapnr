@@ -2720,20 +2720,46 @@ lutToComb pk lut =
 packLut5xs :: Packer -> Packer
 packLut5xs pk = do
     let e = pkE pk
+        -- roots mirrors the C++ lutN_roots dicts: values replaceable,
+        -- keys keep their insertion order, iteration is REVERSE
         -- pack LUT5s (PFUMX)
-        (pk1, lut5Roots) = foldl packPfumx (pk, M.empty) (cellsIter (pkDesign pk))
+        (pk1, lut5Roots) = foldl packPfumx (pk, ([], M.empty)) (cellsIter (pkDesign pk))
         pk2 = flushCells pk1
         -- pack LUT6s
-        (pk3, lut6Roots) = foldl packL6 (pk2, M.empty) (cellsIter (pkDesign pk2))
+        (pk3, lut6Roots) = foldl packL6 (pk2, ([], M.empty)) (cellsIter (pkDesign pk2))
         pk4 = flushCells pk3
         -- pack LUT7s
-        (pk5, lut7Roots) = foldl packL7 (pk4, M.empty) (cellsIter (pkDesign pk4))
-        -- constraints
-        pk6 = foldl (\p (_, (a, b)) -> relConstr p b a (4 `shiftL` 2)) pk5 (M.toList lut7Roots)
-        pk7 = foldl (\p (_, (a, b)) -> relConstr p b a (2 `shiftL` 2)) pk6 (M.toList lut6Roots)
-        pk8 = foldl (\p (_, (a, b)) -> relConstr p a b (1 `shiftL` 2)) pk7 (M.toList lut5Roots)
+        (pk5, lut7Roots) = foldl packL7 (pk4, ([], M.empty)) (cellsIter (pkDesign pk4))
+        -- constraints (the C++ iterates each roots dict in reverse
+        -- insertion order)
+        pk6 =
+            foldl
+                (\p k ->
+                    let (a, b) = snd lut7Roots M.! k
+                        pkA = p{pkDesign = setCellCluster b (Just b) 0 0 ((1 `shiftL` 2) .|. belCombZ) True (pkDesign p)}
+                     in relConstrCells pkA b a (4 `shiftL` 2)
+                )
+                pk5
+                (reverse (fst lut7Roots))
+        pk7 =
+            foldl
+                (\p k ->
+                    let (a, b) = snd lut6Roots M.! k
+                     in relConstrCells p b a (2 `shiftL` 2)
+                )
+                pk6
+                (reverse (fst lut6Roots))
+        pk8 =
+            foldl
+                (\p k ->
+                    let (a, b) = snd lut5Roots M.! k
+                     in relConstrCells p a b (1 `shiftL` 2)
+                )
+                pk7
+                (reverse (fst lut5Roots))
      in flushCells pk8
   where
+    insRoot k v (ks, m) = (if M.member k m then ks else ks ++ [k], M.insert k v m)
     getComb1FromLut5 p lut5 =
         let f1 = getPort (cellOf p lut5) (cid p "F1")
          in case netDrivenBy p f1 (\_ -> True) (cid p "F") of
@@ -2754,7 +2780,7 @@ packLut5xs pk = do
                             pkE = movePort pkD (cellName ci) (cid pkD "ALUT") l0 (cid pkD "F1")
                             pkF = movePort pkE (cellName ci) (cid pkE "C0") l0 (cid pkE "M")
                             pkG = pkF{pkDesign = disconnectPort (cellName ci) (cid pkF "BLUT") (pkDesign pkF)}
-                         in (pkG{pkPacked = pkPacked pkG ++ [cellName ci]}, M.insert l0 (l0, l1) roots)
+                         in (pkG{pkPacked = pkPacked pkG ++ [cellName ci]}, insRoot l0 (l0, l1) roots)
                     _ -> error "PFUMX driven by cell other than a LUT"
              in p1
         | otherwise = (pAcc, roots)
@@ -2768,12 +2794,12 @@ packLut5xs pk = do
                     case comb0 of
                         Nothing -> (pAcc, roots)
                         Just c0
-                            | M.member c0 roots -> (pAcc, roots)
+                            | M.member c0 (snd roots) -> (pAcc, roots)
                             | otherwise ->
                                 case comb1 of
                                     Nothing -> (pAcc, roots)
                                     Just c1
-                                        | M.member c1 roots -> (pAcc, roots)
+                                        | M.member c1 (snd roots) -> (pAcc, roots)
                                         | otherwise ->
                                             let c0' = getComb1FromLut5 pAcc c0
                                                 c1' = getComb1FromLut5 pAcc c1
@@ -2785,7 +2811,7 @@ packLut5xs pk = do
                                                 pkF = movePort pkE (cellName ci) (cid pkE "D1") c1' (cid pkE "FXB")
                                                 pkG = movePort pkF (cellName ci) (cid pkF "SD") c1' (cid pkF "M")
                                                 pkH = movePort pkG (cellName ci) (cid pkG "Z") c1' (cid pkG "OFX")
-                                             in (pkH{pkPacked = pkPacked pkH ++ [cellName ci]}, M.insert c1' (c0', c1') roots)
+                                             in (pkH{pkPacked = pkPacked pkH ++ [cellName ci]}, insRoot c1' (c0', c1') roots)
              in p1
         | otherwise = (pAcc, roots)
     packL7 (pAcc, roots) ci
@@ -2809,7 +2835,7 @@ packLut5xs pk = do
                                         pkF = movePort pkE (cellName ci) (cid pkE "D1") c2' (cid pkE "FXB")
                                         pkG = movePort pkF (cellName ci) (cid pkF "SD") c2' (cid pkF "M")
                                         pkH = movePort pkG (cellName ci) (cid pkG "Z") c2' (cid pkG "OFX")
-                                     in (pkH{pkPacked = pkPacked pkH ++ [cellName ci]}, M.insert c2' (c1, c3) roots)
+                                     in (pkH{pkPacked = pkPacked pkH ++ [cellName ci]}, insRoot c2' (c1, c3) roots)
                                 Nothing -> error "SLICE FXA driven by cell other than a SLICE OFX0"
                     _ -> error "L6MUX21 driven by cell other than a SLICE OFX"
         | otherwise = (pAcc, roots)

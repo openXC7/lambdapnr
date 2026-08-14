@@ -26,6 +26,7 @@ import Lambdapnr.Arch.Ecp5.ArchCellInfo (assignArchInfo)
 import Lambdapnr.Arch.Ecp5.Bitgen (buildConfig)
 import Lambdapnr.Arch.Ecp5.Config (renderChipConfig)
 import Lambdapnr.Arch.Ecp5.Pack (Packer, designOf, packDesign)
+import Lambdapnr.Arch.Ecp5.PlacerHeap (CellLoc (..), PlacerState (..), emptyPlacerState, placeHeapSeed)
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), PipId (..), WireId (..), eaDevice)
 import Lambdapnr.CLI (Command (..), applyGeneralOpts, checkSingleDevice, ecp5ArgsFromOpts, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
@@ -42,6 +43,7 @@ import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import qualified Data.Text as T
 import Control.Monad (forM_)
+import Lambdapnr.Kernel.DeterministicRng (rngState)
 import Lambdapnr.Kernel.IdString (IdString, IdTable, emptyId, idToText, intern, tableSlice)
 
 -- | TEMPORARY debug: dump the id table slice after settings interning.
@@ -158,6 +160,13 @@ runFlow prog opts = case checkSingleDevice opts of
                                                             dPacked
                                                     hPutStrLn stderr (printf "Checksum: 0x%08x" cksum)
                                                     _ <- evaluate (designCells dPacked)
+                                                    -- placer stage 1: constraints + seed + initial HPWL
+                                                    hPutStrLn stderr (printf "LPDBG rngstate %016x" (rngState (ctxRng ctx')))
+                                                    let (_, _, ps, nConstr, hpwl0) = placeHeapSeed arch (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))) dPacked (emptyPlacerState (ctxRng ctx'))
+                                                    _ <- evaluate (rngState (psRng ps))
+                                                    hPutStrLn stderr ("Placed " ++ show nConstr ++ " cells based on constraints.")
+                                                    hPutStrLn stderr ("Creating initial analytic placement for " ++ show (length (psPlaceCells ps)) ++ " cells, random placement wirelen = " ++ show hpwl0 ++ ".")
+                                                    writeFile "/tmp/hs_seed_dump.txt" (unlines ([ "SEED " ++ T.unpack (idToText (ctxIdTable ctx') c) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | c <- psPlaceCells ps, Just l <- [M.lookup c (psLocs ps)]] ++ [ "LOCK " ++ T.unpack (idToText (ctxIdTable ctx') n) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | (n, l) <- M.toList (psLocs ps), plcLocked l ]))
                                                     case lookup "textcfg" opts of
                                                         Just (Just cfgFile) -> do
                                                             let cc = buildConfig arch ai dPacked settings'

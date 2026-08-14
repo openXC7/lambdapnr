@@ -31,6 +31,7 @@ library
     Lambdapnr.Arch.Ecp5.Chipdb
     Lambdapnr.Arch.Ecp5.ConstIds
     Lambdapnr.Arch.Ecp5.Pack
+    Lambdapnr.Arch.Ecp5.PlacerHeap
     Lambdapnr.Arch.Ecp5.Types
     Lambdapnr.Kernel.Arch
     Lambdapnr.Kernel.ArchCheck
