@@ -12,8 +12,8 @@ milestone; everything exits 125 like the C++ @log_error@ path.
 -}
 module Main (main) where
 
-import Control.Monad (forM_)
-import Control.Exception (evaluate)
+import Control.Monad (foldM, forM_)
+import Control.Exception (SomeException, evaluate, try)
 import Text.Printf (printf)
 import qualified Data.Map.Strict as M
 import qualified Data.Text.IO as TIO
@@ -29,7 +29,8 @@ import Lambdapnr.Arch.Ecp5.Pack (Packer, designOf, packDesign)
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), PipId (..), WireId (..), eaDevice)
 import Lambdapnr.CLI (Command (..), applyGeneralOpts, checkSingleDevice, ecp5ArgsFromOpts, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
-import Lambdapnr.Kernel.Arch (getChipName)
+import Data.List (intercalate)
+import Lambdapnr.Kernel.Arch (getBelName, getChipName)
 import Lambdapnr.Kernel.Checksum (checksum, checksumCell, checksumNet)
 import Lambdapnr.Kernel.ArchCheck (archcheck)
 import Lambdapnr.Kernel.Context (Context (..), newContextWith)
@@ -38,9 +39,10 @@ import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, NetInfo (..), PortInfo (
 import Lambdapnr.Kernel.Property (Property (..))
 import qualified Data.Vector as V
 import qualified Data.Map.Strict as M
+import Data.Text (Text)
 import qualified Data.Text as T
 import Control.Monad (forM_)
-import Lambdapnr.Kernel.IdString (IdTable, idToText, tableSlice)
+import Lambdapnr.Kernel.IdString (IdString, IdTable, emptyId, idToText, intern, tableSlice)
 
 -- | TEMPORARY debug: dump the id table slice after settings interning.
 lambdapnrDebugDump :: IdTable -> IO ()
@@ -49,12 +51,13 @@ lambdapnrDebugDump tbl = do
     mapM_ (hPutStrLn stderr . ("TBL " ++)) (zipWith (\i s -> show i ++ ": " ++ s) [1969 ..] xs)
 
 -- | TEMPORARY debug: dump the design state in the C++ LPDBG format.
-stateDump :: IdTable -> Design BelId WireId PipId -> IO ()
-stateDump tbl d = do
+stateDump :: Ecp5 -> IdTable -> Design BelId WireId PipId -> IO ()
+stateDump arch tbl d = do
     let nm = T.unpack . idToText tbl
     forM_ (M.toList (designCells d)) $ \(_, ci) -> do
         hPutStrLn stderr ("LPCHKX cell " ++ nm (cellName ci) ++ " " ++ printf "%08x" (checksumCell (const 0) ci))
         hPutStrLn stderr ("LPDBG cell " ++ nm (cellName ci) ++ " type=" ++ nm (cellType ci))
+        hPutStrLn stderr ("LPDBG cellbel " ++ nm (cellName ci) ++ " " ++ maybe "-" (intercalate "/" . map (T.unpack . idToText tbl) . getBelName arch) (cellBel ci) ++ " " ++ show (fromEnum (cellBelStrength ci)))
         forM_ (M.toList (cellPorts ci)) $ \(p, pi) -> do
             hPutStrLn stderr ("LPDBG cellport " ++ nm (cellName ci) ++ " " ++ nm p ++ " " ++ maybe "-" nm (portNet pi) ++ " " ++ show (fromEnum (portType pi)))
         forM_ (M.toList (cellAttrs ci)) $ \(k, v) ->
@@ -136,14 +139,15 @@ runFlow prog opts = case checkSingleDevice opts of
                                             case r of
                                                 Left err -> die prog err
                                                 Right d -> do
-                                                    reportDesign prog jsonFile d
+                                                    (settings', d') <- applyLpfs prog arch opts (ctxSettings ctx') d
+                                                    reportDesign prog jsonFile d'
                                                     hPutStrLn stderr "Packing design..."
-                                                    pk <- packDesign arch d ("verbose" `elem` map fst opts) (ctxSettings ctx')
+                                                    pk <- packDesign arch d' ("verbose" `elem` map fst opts) settings'
         
                                                     _ <- do
                                                         stp <- lookupEnv "LAMBDAPNR_PACK_STOP"
                                                         case stp of
-                                                            Just _ -> stateDump (ctxIdTable ctx') (designOf pk)
+                                                            Just _ -> stateDump arch (ctxIdTable ctx') (designOf pk)
                                                             Nothing -> pure ()
                                                     let dPacked = designOf pk
                                                         ai = assignArchInfo (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))) dPacked
@@ -156,12 +160,66 @@ runFlow prog opts = case checkSingleDevice opts of
                                                     _ <- evaluate (designCells dPacked)
                                                     case lookup "textcfg" opts of
                                                         Just (Just cfgFile) -> do
-                                                            let cc = buildConfig arch ai dPacked (ctxSettings ctx')
+                                                            let cc = buildConfig arch ai dPacked settings'
                                                             TIO.writeFile cfgFile (renderChipConfig cc)
                                                             hPutStrLn stderr (prog ++ ": wrote text config to " ++ cfgFile)
                                                             die prog "placing not yet implemented"
                                                         _ -> die prog "placing not yet implemented"
                                         _ -> die prog "no JSON design file specified"
+
+-- | @ECP5CommandHandler::customAfterLoad@: parse every @--lpf@ file via
+-- @apply_lpf@, then verify every nextpnr buffer has a LOC (unless
+-- @--lpf-allow-unconstrained@). The per-cell type checks intern
+-- @$nextpnr_ibuf@\/@$nextpnr_obuf@\/@$nextpnr_iobuf@ in the C++ evaluation
+-- order (short-circuit) — that interning is part of the contract.
+applyLpfs :: String -> Ecp5 -> [(String, Maybe String)] -> M.Map IdString Property -> Design BelId WireId PipId -> IO (M.Map IdString Property, Design BelId WireId PipId)
+applyLpfs prog arch opts settings d =
+    case [f | ("lpf", Just f) <- opts] of
+        [] -> pure (settings, d)
+        files -> do
+            (st, d') <- foldM (applyOne prog arch) (settings, d) files
+            _ <- checkIoConstrained prog arch opts d'
+            pure (st, d')
+  where
+    applyOne :: String -> Ecp5 -> (M.Map IdString Property, Design BelId WireId PipId) -> FilePath -> IO (M.Map IdString Property, Design BelId WireId PipId)
+    applyOne prog arch (st, d) file = do
+        lsrc <- try (TIO.readFile file) :: IO (Either SomeException Text)
+        case lsrc of
+            Left _ -> die prog ("failed to open LPF file '" ++ file ++ "'")
+            Right contents -> do
+                r <- applyLpf arch (T.pack file) contents st d
+                case r of
+                    Left err -> die prog ("failed to parse LPF file '" ++ file ++ "': " ++ err)
+                    Right ok -> pure ok
+
+-- | The unconstrained-IO check loop of @customAfterLoad@.
+checkIoConstrained :: String -> Ecp5 -> [(String, Maybe String)] -> Design BelId WireId PipId -> IO ()
+checkIoConstrained prog arch opts d = do
+    let tbl = ecp5IdTable arch
+        cidOf t = maybe emptyId id (M.lookup t (tdConstIdByName (ecp5TimingDb arch)))
+        allowUncon = "lpf-allow-unconstrained" `elem` map fst opts
+        locId = cidOf "LOC"
+        act ci =
+            case M.lookup locId (cellAttrs ci) of
+                Nothing
+                    | allowUncon ->
+                        hPutStrLn stderr ("Warning: IO '" ++ T.unpack (idToText tbl (cellName ci)) ++ "' is unconstrained in LPF and will be automatically placed")
+                    | otherwise ->
+                        die prog ("IO '" ++ T.unpack (idToText tbl (cellName ci)) ++ "' is unconstrained in LPF (override this error with --lpf-allow-unconstrained)")
+                Just _ -> pure ()
+        go [] = pure ()
+        go (ci : rest) = do
+            ibuf <- intern tbl "$nextpnr_ibuf"
+            if cellType ci == ibuf
+                then act ci >> go rest
+                else do
+                    obuf <- intern tbl "$nextpnr_obuf"
+                    if cellType ci == obuf
+                        then act ci >> go rest
+                        else do
+                            iobuf <- intern tbl "$nextpnr_iobuf"
+                            if cellType ci == iobuf then act ci >> go rest else go rest
+    go (cellsIter d)
 
 die :: String -> String -> IO a
 die prog err = do

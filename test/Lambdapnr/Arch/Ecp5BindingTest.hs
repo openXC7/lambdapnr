@@ -40,7 +40,7 @@ loadArch = do
 -- | A minimal design with one empty net @n1@.
 testDesign :: Design BelId WireId PipId
 testDesign =
-  addNet emptyId (NetInfo emptyId emptyId (PortRef Nothing emptyId) V.empty M.empty M.empty emptyId) emptyDesign
+  addNet emptyId (NetInfo emptyId emptyId (PortRef Nothing emptyId) V.empty [] M.empty M.empty emptyId) emptyDesign
 
 -- | A pip whose timing class has a nonzero fanout adder (deterministic
 -- chipdb order).
@@ -154,6 +154,12 @@ ecp5BindingTests =
                     , cellParams = M.empty
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
+                    , cellCluster = emptyId
+                    , cellConstrX = 0
+                    , cellConstrY = 0
+                    , cellConstrZ = 0
+                    , cellConstrAbsZ = False
+                    , cellConstrChildren = []
                     }
             (e1, d1) = bindBel emptyId b StrengthLocked (ecp5Bind e0) (addCell emptyId cell testDesign)
         assertEqual "bel bound" (Just emptyId) (boundBelCell b (e1))
@@ -201,6 +207,12 @@ ecp5BindingTests =
                     , cellParams = M.empty
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
+                    , cellCluster = emptyId
+                    , cellConstrX = 0
+                    , cellConstrY = 0
+                    , cellConstrZ = 0
+                    , cellConstrAbsZ = False
+                    , cellConstrChildren = []
                     }
             combNoInputs = combWithInputs{cellPorts = M.fromList [(cid' "F", mkPort "F")]}
             ff =
@@ -213,6 +225,12 @@ ecp5BindingTests =
                     , cellParams = M.empty
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
+                    , cellCluster = emptyId
+                    , cellConstrX = 0
+                    , cellConstrY = 0
+                    , cellConstrZ = 0
+                    , cellConstrAbsZ = False
+                    , cellConstrChildren = []
                     }
         assertEqual "comb A is comb input" (TmgCombInput, 0) (getPortTimingClass e combWithInputs (cid' "A"))
         assertEqual "comb F is comb output" (TmgCombOutput, 0) (getPortTimingClass e combWithInputs (cid' "F"))
@@ -236,6 +254,12 @@ ecp5BindingTests =
                     , cellParams = M.empty
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
+                    , cellCluster = emptyId
+                    , cellConstrX = 0
+                    , cellConstrY = 0
+                    , cellConstrZ = 0
+                    , cellConstrAbsZ = False
+                    , cellConstrChildren = []
                     }
             dcca =
                 CellInfo
@@ -247,6 +271,12 @@ ecp5BindingTests =
                     , cellParams = M.empty
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
+                    , cellCluster = emptyId
+                    , cellConstrX = 0
+                    , cellConstrY = 0
+                    , cellConstrZ = 0
+                    , cellConstrAbsZ = False
+                    , cellConstrChildren = []
                     }
         assertEqual "comb A->F" (Just (dqScalar 200 236)) (getCellDelay e comb (cid' "A") (cid' "F"))
         assertEqual "comb F->A has no arc" Nothing (getCellDelay e comb (cid' "F") (cid' "A"))
@@ -265,6 +295,12 @@ ecp5BindingTests =
                     , cellParams = M.empty
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
+                    , cellCluster = emptyId
+                    , cellConstrX = 0
+                    , cellConstrY = 0
+                    , cellConstrZ = 0
+                    , cellConstrAbsZ = False
+                    , cellConstrChildren = []
                     }
             info = getPortClockingInfo e ff (cid' "Q") 0
         assertEqual "clock port" (cid' "CLK") (tciClockPort info)

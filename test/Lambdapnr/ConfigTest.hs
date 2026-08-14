@@ -15,8 +15,9 @@ import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 import Lambdapnr.Arch.Ecp5
 import Lambdapnr.Arch.Ecp5.BaseConfigs (configEmpty)
 import Lambdapnr.Arch.Ecp5.Binding (bindPip)
+import Lambdapnr.Arch.Ecp5.ArchCellInfo (emptyArchInfo)
 import Lambdapnr.Arch.Ecp5.Bitgen (buildConfig, getPipTileName, getTrellisWireName)
-import Lambdapnr.Arch.Ecp5.Chipdb (pipAt)
+import Lambdapnr.Arch.Ecp5.Chipdb (pipAt, piPipType)
 import Lambdapnr.Arch.Ecp5.Config
 import Lambdapnr.Arch.Ecp5.Types
 import Lambdapnr.Kernel.Arch
@@ -112,12 +113,12 @@ configTests =
                 assertEqual (T.unpack dev ++ " unknowns") u nU
         , testCase "bound pips become routing arcs" $ do
             e <- loadEcp5 (Ecp5Args Lfe5um5g25f "" Speed6) "data/ecp5/chipdb-25k.bin" >>= either (error . show) pure
-            let p = head (getPips e)
+            let p = head [q | q <- getPips e, piPipType (pipAt (ecp5Chipdb e) q) == 0]
                 src = getPipSrcWire e p
                 dst = getPipDstWire e p
                 (bs, d) = bindPip (ecp5Chipdb e) emptyId p StrengthWeak (ecp5Bind e) emptyDesign
                 e' = setEcp5Bind bs e
-                cc = buildConfig e' d
+                cc = buildConfig e' emptyArchInfo d M.empty
                 tile = getPipTileName e' p
             -- the pip must land in its tile's arc list with trellis names
             case M.lookup tile (ccTiles cc) of
@@ -129,7 +130,7 @@ configTests =
             assertBool "config non-empty" (not (null (ccTiles cc)))
         , testCase "12k uses the 25k base config" $ do
             e <- loadEcp5 (Ecp5Args Lfe5u12f "" Speed6) "data/ecp5/chipdb-25k.bin" >>= either (error . show) pure
-            let cc = buildConfig e emptyDesign
+            let cc = buildConfig e emptyArchInfo emptyDesign M.empty
             assertEqual "chip name" "LFE5U-12F" (ccChipName cc)
             assertEqual "base = 25f base" (configEmpty "LFE5U-25F") (ccTiles cc)
         ]

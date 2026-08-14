@@ -74,9 +74,13 @@ internStr tbl = intern tbl . T.pack
 -- | Resolve an id back to its text.
 idToText :: IdTable -> IdString -> Text
 idToText (IdTable ref) (IdString i) =
-    unsafePerformIO $ do
+    -- force the index BEFORE the snapshot read: the newtype pattern match
+    -- does not evaluate, and 'i' is often a lazy on-demand intern thunk
+    -- (belNameId & co); deferring the force until IM.lookup would intern
+    -- AFTER the IORef snapshot and miss the freshly interned entry
+    i `seq` unsafePerformIO (do
         (_, v) <- readIORef ref
-        pure (maybe T.empty id (IM.lookup i v))
+        pure (maybe T.empty id (IM.lookup i v)))
 {-# NOINLINE idToText #-}
 
 -- | 'idToText' over 'String'.

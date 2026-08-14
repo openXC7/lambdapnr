@@ -27,23 +27,25 @@ module Lambdapnr.Arch.Ecp5.Pack (
 import Control.Monad (foldM, when)
 import Control.DeepSeq (deepseq)
 import Data.Function ((&))
-import Data.List (sortOn)
+import Data.List (maximumBy, sortBy, sortOn)
 import System.IO (hPutStrLn, stderr)
 import Data.Bits (complement, (.&.), (.|.), shiftL, shiftR)
 import Data.Int (Int64)
 import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe, isJust)
+import Data.Ord (comparing)
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Text.Printf (printf)
 
 import Lambdapnr.Arch.Ecp5 hiding (locX, locY, locZ)
+import Lambdapnr.Arch.Ecp5.Binding (bindBel, unbindBel)
 import Lambdapnr.Arch.Ecp5.ArchCellInfo
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
 import Lambdapnr.Arch.Ecp5.Chipdb
 import Lambdapnr.Arch.Ecp5.Types
-import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelByName, getBelLocation, getBelName, getBelPins, getBelPinType, getBelPinWire, getBels, getBelType)
+import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelByName, getBelGlobalBuf, getBelLocation, getBelName, getBelPins, getBelPinType, getBelPinWire, getBels, getBelType, getPipDstWire, getPipSrcWire, getPipsDownhill, getPipsUphill)
 import Lambdapnr.Kernel.Delay (ClockConstraint (..), DelayPair (..))
 import Lambdapnr.Kernel.IdString (IdString (..), emptyId, idToText)
 import Lambdapnr.Kernel.Netlist
@@ -1554,21 +1556,10 @@ packDcus pk =
 
 getBelByNameStr :: Packer -> T.Text -> Maybe BelId
 getBelByNameStr pk name =
-    let parts = T.splitOn "/" name
-     in case parts of
-            [x, y, bname] ->
-                let xi = readInt (T.unpack (T.drop 1 x))
-                    yi = readInt (T.unpack (T.drop 1 y))
-                 in getBelByName (pkE pk) [xId, yId, bId]
-              where
-                xId = fromMaybe emptyId (M.lookup x (tdConstIdByName (ecp5TimingDb (pkE pk))))
-                yId = fromMaybe emptyId (M.lookup y (tdConstIdByName (ecp5TimingDb (pkE pk))))
-                bId = fromMaybe emptyId (M.lookup bname (tdConstIdByName (ecp5TimingDb (pkE pk))))
-            _ -> Nothing
-  where
-    readInt t = case reads t of
-        [(i, "")] -> i
-        _ -> 0
+    -- IdStringList::parse: intern each '/'-separated component
+    case T.splitOn "/" name of
+        [x, y, bname] -> getBelByName (pkE pk) [internT pk x, internT pk y, internT pk bname]
+        _ -> Nothing
 
 packMisc :: Packer -> Packer
 packMisc pk =
@@ -2207,185 +2198,399 @@ generateConstraints pk =
                     Nothing -> p{pkClkConstr = M.insert to cc (pkClkConstr p)}
 
 -- ---------------------------------------------------------------------------
--- promote_ecp5_globals (globals.cc: get_clocks + insert_dcc)
+-- promote_ecp5_globals (globals.cc: get_clocks + insert_dcc + place_dcc_dcs)
 -- ---------------------------------------------------------------------------
 
+-- | DCC placement metric (@DccMetric@).
+data DccMetric = DccMetric !Int !Bool !Int deriving (Eq, Show)
+
+-- | @DccMetric::operator<@: dedicated beats non-dedicated; among
+-- dedicated the fewest hops wins; otherwise the lowest wirelen wins.
+dccMetricLt :: DccMetric -> DccMetric -> Bool
+dccMetricLt (DccMetric wl ded hops) (DccMetric wl' ded' hops') =
+    if ded then not ded' || hops < hops' else not ded' && wl < wl'
+
+-- | @promote_globals@: promote clock nets to global networks by
+-- inserting DCCA buffers.
 promoteGlobals :: Packer -> Packer
-promoteGlobals pk = do
-    let pk0 = pk
-        disable = boolOrDef (pkSettings pk0) (cid pk0 "arch.no-promote-globals") False
-        isOoc = boolOrDef (pkSettings pk0) (cid pk0 "arch.ooc") False
-        clocks = getClocks pk0
-        (pk1, _) = foldl (promoteClock disable isOoc) (pk0, ()) clocks
-        -- DCS inputs
+promoteGlobals pk =
+    let _ = info "Promoting globals..."
+        -- the setting lookups intern "arch.no-promote-globals" here
+        disable = boolOrDef (pkSettings pk) (internT pk "arch.no-promote-globals") False
+        isOoc = boolOrDef (pkSettings pk) (internT pk "arch.ooc") False
+        clocks = getClocks pk
+        (pk1, _) = foldl (promoteClock disable isOoc) (pk, S.empty) clocks
         dcsCells = [ci | ci <- cellsIter (pkDesign pk1), cellType ci == cid pk1 "DCSC"]
-        (pk2, _) = foldl dcsDcc (pk1, ()) dcsCells
+        (pk2, _) = foldl dcsDcc (pk1, S.empty) dcsCells
      in pk2
   where
-    getClocks p =
-        [ n
-        | (n, ni) <- M.toList (designNets (pkDesign p))
-        , M.member n (pkClkConstr p)
-        ]
-    promoteClock disable isOoc (p, _) clockNet =
+    promoteClock disable isOoc (p, used) clockNet =
         let ni = netOf p clockNet
-            isNoglobal =
+            isNoGlobal =
                 disable
                     || boolOrDef (netAttrs ni) (cid p "noglobal") False
                     || boolOrDef (netAttrs ni) (cid p "ECP5_IS_GLOBAL") False
-         in if isNoglobal
-                then (p, ())
+         in if isNoGlobal
+                then (p, used)
                 else
                     if isOoc
-                        then (p{pkDesign = addNet clockNet (ni{netAttrs = M.insert (cid p "ECP5_IS_GLOBAL") (propFromInt 1 32) (netAttrs ni)}) (pkDesign p)}, ())
-                        else (insertDcc p clockNet Nothing, ())
-    dcsDcc (p, _) ci =
-        (foldl (\p' port -> case getPort ci (cid p' port) of
-                    Just n -> insertDcc p' n (Just (cellName ci))
-                    Nothing -> p') p ["CLK0", "CLK1"], ())
+                        then (markGlobalNet p clockNet, used)
+                        else
+                            let _ = info ("    promoting clock net " ++ T.unpack (idStr p clockNet) ++ " to global network")
+                             in insertDcc p clockNet Nothing used
+    dcsDcc (p, used) ci =
+        foldl
+            (\ (pAcc, uAcc) portId -> case getPort ci portId of
+                Just n -> insertDcc pAcc n (Just (cellName ci)) uAcc
+                Nothing -> (pAcc, uAcc))
+            (p, used)
+            [cid p "CLK0", cid p "CLK1"]
+
+-- | @get_clocks@: nets with clock-port users (threshold 5), plus every
+-- DCCA CLKO net. Counts are accumulated in net iteration order; ties
+-- resolve to the last-inserted maximal entry (the C++ dict iterates in
+-- reverse insertion order, and max_element keeps the first maximum).
+getClocks :: Packer -> [IdString]
+getClocks p =
+    let counts = foldl countNet [] (netsIter (pkDesign p))
+        countNet acc ni
+            | netName ni == cid p "$PACKER_GND_NET" || netName ni == cid p "$PACKER_VCC_NET" || prCell (netDriver ni) == Nothing = acc
+            | otherwise =
+                let cnt = foldl (\c u -> c + clockUserBonus p u) 0 (activeUsers (netUsers ni))
+                 in acc ++ [(netName ni, cnt)]
+        dccaClocks =
+            [ glb
+            | ci <- cellsIter (pkDesign p)
+            , cellType ci == cid p "DCCA"
+            , Just glb <- [getPort ci (cid p "CLKO")]
+            ]
+        counts' = foldl (\acc n -> filter ((/= n) . fst) acc) counts dccaClocks
+        pick acc clks
+            | length clks >= 16 = clks
+            | null acc = clks
+            | otherwise =
+                let m = maximumBy (comparing snd) acc
+                 in if snd m < 5 then clks else pick (filter (/= m) acc) (clks ++ [fst m])
+     in pick counts' dccaClocks
+
+-- | @is_clock_port@.
+isClockPortP :: Packer -> PortRef -> Bool
+isClockPortP p u =
+    case prCell u of
+        Nothing -> False
+        Just c ->
+            let t = cellType (cellOf p c)
+                port = prPort u
+             in (t == cid p "TRELLIS_FF" && port == cid p "CLK")
+                    || (t == cid p "TRELLIS_COMB" && port == cid p "WCK")
+                    || (t == cid p "DCUA" && port `elem` map (cid p) ["CH0_FF_RXI_CLK", "CH1_FF_RXI_CLK", "CH0_FF_TXI_CLK", "CH1_FF_TXI_CLK"])
+                    || ((t == cid p "IOLOGIC" || t == cid p "SIOLOGIC") && port == cid p "CLK")
+
+clockUserBonus :: Packer -> PortRef -> Int
+clockUserBonus p u
+    | not (isClockPortP p u) = 0
+    | otherwise =
+        let t = cellType (cellOf p (fromMaybe (error "clock user") (prCell u)))
+         in if t == cid p "DCUA"
+                then 100
+                else
+                    if t == cid p "IOLOGIC" || t == cid p "SIOLOGIC"
+                        then 10
+                        else 1
+
+-- | @is_logic_port@.
+isLogicPortP :: Packer -> PortRef -> Bool
+isLogicPortP p u =
+    case prCell u of
+        Nothing -> False
+        Just c ->
+            let t = cellType (cellOf p c)
+                port = prPort u
+             in (t == cid p "TRELLIS_FF" && port /= cid p "CLK")
+                    || (t == cid p "TRELLIS_COMB" && port /= cid p "WCK")
 
 -- | @insert_dcc@: create a DCCA, a glbnet, rewire users, place the DCC.
-insertDcc :: Packer -> IdString -> Maybe IdString -> Packer
-insertDcc pk net mdcsCell =
+insertDcc :: Packer -> IdString -> Maybe IdString -> S.Set WireId -> (Packer, S.Set WireId)
+insertDcc pk net mdcsCell used =
     let ni = netOf pk net
         already =
             case prCell (netDriver ni) of
                 Just c -> cellType (cellOf pk c) `elem` [cid pk "DCCA", cid pk "DCSC"]
                 Nothing -> False
      in if already
-            then markGlobal pk net
+            then
+                let dccptr = fromMaybe (error "insert_dcc drv") (prCell (netDriver ni))
+                    p1 = markGlobalNet pk net
+                    p2 =
+                        if strOrDef (cellAttrs (cellOf p1 dccptr)) (cid p1 "BEL") "" == ""
+                            then fst (placeDccDcs p1 dccptr used)
+                            else p1
+                 in (p2, used)
             else
-                let (pk1, dcc) = createCell pk (cid pk "DCCA") (Just (internT pk ("$gbuf$" <> idStr pk net)))
-                    glbName = internT pk1 ("$glbnet$" <> idStr pk1 net)
-                    glbNet0 = createNet pk1 glbName
-                    glbNet = glbNet0{netDriver = PortRef (Just (cellName dcc)) (cid pk1 "CLKO")}
-                    pk2 = pk1{pkDesign = addNet glbName glbNet (pkDesign pk1)}
-                    pk3 = pk2{pkDesign = connectPort (cellName dcc) (cid pk2 "CLKO") glbName (pkDesign pk2)}
-                    users = activeUsers (netUsers (netOf pk3 net))
-                    isLogicPort u =
-                        let ci = cellOf pk3 (fromMaybe (error "u") (prCell u))
-                            pname = idStr pk3 (prPort u)
-                         in cellType ci == cid pk3 "TRELLIS_FF"
-                                || pname `elem` ["CLKI", "ECLKI", "CLK0", "CLK1", "DCSOUT", "CLKO", "CDIVX", "ECLKO", "OSC"]
-                    (pk4, keepUsers) =
-                        foldl
-                            (\ (pAcc, keep) u ->
-                                case prCell u of
-                                    Nothing -> (pAcc, keep)
-                                    Just uc ->
-                                        let uci = cellOf pAcc uc
-                                            keepIt =
-                                                (case mdcsCell of
-                                                    Just dc -> cellType uci /= cid pAcc "DCSC"
-                                                    Nothing -> False)
-                                                    || prPort u == cid pAcc "CLKFB"
-                                                    || (prPort (netDriver (netOf pAcc net)) == cid pAcc "OSC" && False)
-                                                    || (prPort (netDriver (netOf pAcc net)) == cid pAcc "REFCLKO" && cellType uci == cid pAcc "DCUA")
-                                                    || isLogicPort u
-                                         in if keepIt
-                                                then (pAcc, keep ++ [u])
-                                                else
-                                                    let p1 = pAcc{pkDesign = connectPort uc (prPort u) glbName (pkDesign pAcc)}
-                                                        -- remove the old user entry
-                                                        p2 = p1{pkDesign = removeNetUser net uc (prPort u) (pkDesign p1)}
-                                                     in (p2, keep))
-                            (pk3, [])
-                            users
-                    -- rebuild net users from keep list
-                    pk5 = pk4{pkDesign = setNetUsers net (V.fromList keepUsers) (pkDesign pk4)}
-                    -- re-add keep users with correct user_idx (connectPort appends)
-                    pk6 = foldl (\p u -> p{pkDesign = connectPort (fromMaybe (error "k") (prCell u)) (prPort u) net (pkDesign p)}) pk5 keepUsers
-                    pk7 = pk6{pkDesign = setNetUsers net V.empty (pkDesign pk6)}
-                    pk8 = foldl (\p u -> p{pkDesign = connectPort (fromMaybe (error "k2") (prCell u)) (prPort u) net (pkDesign p)}) pk7 keepUsers
-                    pk9 = pk8{pkDesign = connectPort (cellName dcc) (cid pk8 "CLKI") net (pkDesign pk8)}
-                    -- clock constraint copy
-                    pk10 =
-                        case M.lookup net (pkClkConstr pk8) of
-                            Just cc -> pk9{pkClkConstr = M.insert glbName cc (pkClkConstr pk9)}
-                            Nothing -> pk9
-                    pk11 = addNew dcc pk10
-                    pk12 = markGlobal pk11 glbName
-                    dccCell = cellOf pk12 (cellName dcc)
-                    belSet =
-                        if strOrDef (cellAttrs dccCell) (cid pk12 "BEL") "" == ""
-                            then placeDccDcs pk12 (cellName dcc)
-                            else pk12
-                 in belSet
-  where
-    markGlobal p netName =
-        let ni = netOf p netName
-         in p{pkDesign = addNet netName (ni{netAttrs = M.insert (cid p "ECP5_IS_GLOBAL") (propFromInt 1 32) (netAttrs ni)}) (pkDesign p)}
+                let dccName = internT pk ("$gbuf$" <> idStr pk net)
+                    (p1, dcc) = createCell pk (cid pk "DCCA") (Just dccName)
+                    glbName = internT p1 ("$glbnet$" <> idStr p1 net)
+                    glbNet = (freshNetPk p1 glbName){netDriver = PortRef (Just dccName) (cid p1 "CLKO")}
+                    p2 = p1{pkDesign = addNet glbName glbNet (pkDesign p1)}
+                    p3 = p2{pkDesign = connectPort dccName (cid p2 "CLKO") glbName (pkDesign p2)}
+                    -- C++ users are an indexed_store: iteration and slots
+                    -- are in ADD order (ascending). keep_users collects in
+                    -- that order; moved users append to the glb net in that
+                    -- order; the rebuilt net users are kept ++ [dcc CLKI].
+                    keepPred u =
+                        case prCell u of
+                            Nothing -> False
+                            Just uc ->
+                                let uci = cellOf p3 uc
+                                 in (case mdcsCell of
+                                        Just dc | uc /= dc -> True
+                                        _ -> False)
+                                        || prPort u == cid p3 "CLKFB"
+                                        || ( cellType (cellOf p3 (fromMaybe (error "drv2") (prCell (netDriver (netOf p3 net))))) == cid p3 "EXTREFB"
+                                                && cellType uci == cid p3 "DCUA"
+                                           )
+                                        || isLogicPortP p3 u
+                    usersAsc = activeUsers (netUsers ni)
+                    (keptAsc, movedAsc) = foldl classifyAsc ([], []) usersAsc
+                    classifyAsc (kept, moved) u =
+                        if keepPred u then (kept ++ [u], moved) else (kept, moved ++ [u])
+                    dccCliRef = PortRef (Just dccName) (cid p3 "CLKI")
+                    netUserList = keptAsc ++ [dccCliRef]
+                    glbUserList = movedAsc
+                    d = pkDesign p3
+                    d1 =
+                        d
+                            { designNets =
+                                M.insert net (netOf p3 net){netUsers = V.fromList (map Just netUserList), netUserFree = []} $
+                                    M.insert glbName (netOf p3 glbName){netUsers = V.fromList (map Just glbUserList), netUserFree = []} (designNets d)
+                            }
+                    -- point every moved user's port at the glb net and set
+                    -- user_idx slots
+                    d2 = foldl setPortInfo d1 (zip glbUserList [0 ..])
+                    setPortInfo dAcc (u, idx) =
+                        let uc = fromMaybe (error "user") (prCell u)
+                         in setCellPortNetIdx uc (prPort u) (Just glbName) idx dAcc
+                    d3 = foldl (\dAcc (u, idx) -> setCellPortNetIdx (fromMaybe (error "kept") (prCell u)) (prPort u) (Just net) idx dAcc) d2 (zip keptAsc [0 ..])
+                    -- the dcc CLKI user is appended last
+                    d4 = setCellPortNetIdx dccName (cid p3 "CLKI") (Just net) (length keptAsc) d3
+                    p4 = p3{pkDesign = d4}
+                    p8 = addNew dcc p4
+                    p9 = markGlobalNet p8 glbName
+                    dccCell = cellOf p9 dccName
+                    (p10, used') =
+                        if strOrDef (cellAttrs dccCell) (cid p9 "BEL") "" == ""
+                            then placeDccDcs p9 dccName used
+                            else (p9, used)
+                 in (p10, used')
 
--- | @place_dcc_dcs@: try every DCCA bel, pick the best metric.
-placeDccDcs :: Packer -> IdString -> Packer
-placeDccDcs pk dcc = do
-    let e = pkE pk
-        ci = cellOf pk dcc
-        usingCe = getPort ci (cid pk "CE") /= Nothing
-        candidates =
-            [ b
-            | b <- getBels e
-            , idStr pk (getBelType e b) == idStr pk (cellType ci)
-            , checkBelAvail e b
-            , let belname = belNameOf b
-            , not (T.head belname == 'D' && usingCe)
-            ]
-        best =
-            foldl
-                (\bestSoFar b ->
-                    let metric = dccMetric pk b dcc
-                     in case bestSoFar of
-                            Nothing -> Just (b, metric)
-                            Just (bb, m) -> if metric < m then Just (b, metric) else bestSoFar)
-                Nothing
-                candidates
-     in case best of
-            Just (b, _) -> setP dcc (cid pk "BEL") (PropStr (belNameStr b)) pk
+-- | Set @ECP5_IS_GLOBAL@ on a net.
+markGlobalNet :: Packer -> IdString -> Packer
+markGlobalNet p netName =
+    let ni = netOf p netName
+     in p{pkDesign = addNet netName (ni{netAttrs = M.insert (cid p "ECP5_IS_GLOBAL") (propFromInt 1 32) (netAttrs ni)}) (pkDesign p)}
+
+clearNetUsers :: IdString -> Design BelId WireId PipId -> Design BelId WireId PipId
+clearNetUsers n d =
+    d{designNets = M.adjust (\ni -> ni{netUsers = V.empty, netUserFree = []}) n (designNets d)}
+
+-- | Set a cell port's net + user index in one go.
+setCellPortNetIdx :: IdString -> IdString -> Maybe IdString -> Int -> Design BelId WireId PipId -> Design BelId WireId PipId
+setCellPortNetIdx cell port net' idx d =
+    d
+        { designCells =
+            M.adjust
+                (\ci -> ci{cellPorts = M.adjust (\pi -> pi{portNet = net', portUserIdx = idx}) port (cellPorts ci)})
+                cell
+                (designCells d)
+        }
+
+-- | @place_dcc_dcs@: try every bel of the DCC type, pick the best
+-- metric, and bind it (with a preliminary PCLKCIB allocation when the
+-- DCC uses one).
+placeDccDcs :: Packer -> IdString -> S.Set WireId -> (Packer, S.Set WireId)
+placeDccDcs pk dccName used0 =
+    let e0 = pkE pk
+        ci = cellOf pk dccName
+        dccType = cellType ci
+        usingCe = isJust (getPort ci (cid pk "CE"))
+        isDcsc = dccType == cid pk "DCSC"
+        go (pAcc, usedAcc, bestBel, bestPclk, bestMetric) bel
+            | getBelType (pkE pAcc) bel /= dccType || not (checkBelAvail (pkE pAcc) bel) =
+                (pAcc, usedAcc, bestBel, bestPclk, bestMetric)
+            | not (belTypeFirstCharOk pAcc bel usingCe) =
+                (pAcc, usedAcc, bestBel, bestPclk, bestMetric)
+            | otherwise =
+                let e = pkE pAcc
+                    (st1, d1) = bindBel dccName bel StrengthLocked (ecp5Bind e) (pkDesign pAcc)
+                    p1 = pAcc{pkE = setEcp5Bind st1 e, pkDesign = d1}
+                    m = dccMetric p1 bel dccName
+                 in if m `dccMetricLt` bestMetric
+                        then
+                            let (pclkM, used1) =
+                                    if dccDedicated m || isDcsc
+                                        then (Just Nothing, usedAcc)
+                                        else case firstFreePclkcib p1 bel usedAcc of
+                                            Just w -> (Just (Just w), usedAcc)
+                                            Nothing -> (Nothing, usedAcc)
+                                (st2, d2) = unbindBel dccName bel (ecp5Bind (pkE p1)) (pkDesign p1)
+                                p1u = p1{pkE = setEcp5Bind st2 (pkE p1), pkDesign = d2}
+                             in case pclkM of
+                                    Nothing -> (p1u, usedAcc, bestBel, bestPclk, bestMetric)
+                                    Just pclk -> (p1u, used1, Just bel, pclk, m)
+                        else
+                            let (st2, d2) = unbindBel dccName bel (ecp5Bind (pkE p1)) (pkDesign p1)
+                             in (p1{pkE = setEcp5Bind st2 (pkE p1), pkDesign = d2}, usedAcc, bestBel, bestPclk, bestMetric)
+        (pF, usedF, bestBel, bestPclk, _) =
+            foldl go (pk, used0, Nothing, Nothing, DccMetric 9999999 False 0) (getBels e0)
+     in case bestBel of
             Nothing -> error "place_dcc_dcs: no valid DCC bel"
+            Just bel ->
+                let (st, d) = bindBel dccName bel StrengthLocked (ecp5Bind (pkE pF)) (pkDesign pF)
+                    pB = pF{pkE = setEcp5Bind st (pkE pF), pkDesign = d}
+                    usedF' = case bestPclk of
+                        Just w -> S.insert w usedF
+                        Nothing -> usedF
+                 in (pB, usedF')
   where
-    belNameOf b = biName (belAt (ecp5Chipdb (pkE pk)) b)
-    belNameStr b = T.intercalate "/" (map (idToText (ecp5IdTable (pkE pk))) (getBelName (pkE pk) b))
+    -- the C++ skips centre DCCs ('D' bel basenames) when CE is used
+    belTypeFirstCharOk p bel usingCe =
+        let nm = biName (belAt (ecp5Chipdb (pkE p)) bel)
+         in not (usingCe && not (T.null nm) && T.head nm == 'D')
 
--- | The DCC placement metric (globals.cc @get_dcc_metric@, simplified:
--- the driver-locked case and the general wirelength case).
-dccMetric :: Packer -> BelId -> IdString -> (Int, Bool)
-dccMetric pk dccBel dcc =
-    let ci = cellOf pk dcc
-        drvNet = getPort ci (cid pk "CLKI")
-        e = pkE pk
-     in case drvNet of
-            Nothing -> (9999999, False)
-            Just n ->
-                let ni = netOf pk n
+dccDedicated :: DccMetric -> Bool
+dccDedicated (DccMetric _ ded _) = ded
+
+-- | First unused candidate PCLKCIB wire (the C++ iterates a
+-- @std::set<WireId>@ — sorted by C++ @WireId::operator<@: location
+-- (y-major, then x) then index).
+firstFreePclkcib :: Packer -> BelId -> S.Set WireId -> Maybe WireId
+firstFreePclkcib p bel used =
+    case [w | w <- sortBy (\a b -> if cppWireLt a b then LT else if a == b then EQ else GT) (S.toList (candidatePclkcibs p bel)), not (S.member w used)] of
+        (w : _) -> Just w
+        [] -> Nothing
+  where
+    cppWireLt w1 w2 =
+        let Location x1 y1 = wireLoc w1
+            Location x2 y2 = wireLoc w2
+         in if x1 == x2 && y1 == y2
+                then wireIdx w1 < wireIdx w2
+                else
+                    if y1 == y2
+                        then x1 < x2
+                        else y1 < y2
+
+-- | @get_candidate_pclkcibs@: the QPCLKCIB wires uphill of the DCC
+-- CLKI mux. Interning of the uphill wire basenames happens here, in
+-- chipdb pip order, exactly like the C++ @nameOf(...)@ call.
+candidatePclkcibs :: Packer -> BelId -> S.Set WireId
+candidatePclkcibs p bel =
+    let e = pkE p
+     in case getBelPinWire e bel (cid p "CLKI") of
+            Nothing -> S.empty
+            Just dccI ->
+                case getPipsUphill e dccI of
+                    [] -> S.empty
+                    (p1 : _) ->
+                        let mux = getPipSrcWire e p1
+                         in S.fromList
+                                [ src
+                                | pip <- getPipsUphill e mux
+                                , let src = getPipSrcWire e pip
+                                , "QPCLKCIB" `T.isInfixOf` idStr p (internT p (getWireBasename e src))
+                                ]
+
+-- | @get_dcc_metric@: wirelen + dedicated-routing flag + hop count.
+dccMetric :: Packer -> BelId -> IdString -> DccMetric
+dccMetric pk dccBel dccName =
+    let e = pkE pk
+        ci = cellOf pk dccName
+        clkiPort = if cellType ci == cid pk "DCSC" then cid pk "CLK0" else cid pk "CLKI"
+     in case getPort ci clkiPort of
+            Nothing -> DccMetric 9999999 False 0
+            Just clkiNet ->
+                let ni = netOf pk clkiNet
                     drv = netDriver ni
                  in case prCell drv of
-                        Just drvCell
-                            | M.member (cid pk "BEL") (cellAttrs (cellOf pk drvCell)) ->
-                                let belStr = strOrDef (cellAttrs (cellOf pk drvCell)) (cid pk "BEL") ""
-                                 in case getBelByNameStr pk (T.pack belStr) of
-                                        Just drvBel ->
-                                            let Loc dx dy _ = getBelLocation e drvBel
-                                                Loc cx cy _ = getBelLocation e dccBel
-                                             in (abs (cx - dx) + abs (cy - dy), False)
-                                        Nothing -> (9999999, False)
-                        _ ->
-                            -- wirelength metric over placed users
-                            let Loc dx dy _ = getBelLocation e dccBel
+                        Nothing -> DccMetric 0 False 0
+                        Just drvCell ->
+                            let drvCi = cellOf pk drvCell
+                                drvBel =
+                                    case M.lookup (cid pk "BEL") (cellAttrs drvCi) of
+                                        Just belp -> getBelByNameStr pk (propAsString belp)
+                                        Nothing -> singletonBelOf e drvCi
+                             in case drvBel of
+                                    Nothing -> DccMetric (netMetricWl pk clkiNet) False 0
+                                    Just bel ->
+                                        case (getBelPinWire e bel (prPort drv), getBelPinWire e dccBel (cid pk "CLKI")) of
+                                            (Just srcW, Just dstW) ->
+                                                case hasShortRoute e srcW dstW 7 of
+                                                    Just hops -> DccMetric 0 True hops
+                                                    Nothing ->
+                                                        let Loc dx dy _ = getBelLocation e bel
+                                                            Loc cx cy _ = getBelLocation e dccBel
+                                                         in DccMetric (abs (cx - dx) + abs (cy - dy)) False 0
+                                            _ -> DccMetric 9999999 False 0
+
+-- | The singleton-bel scan: the driver type's unique bel, if any.
+singletonBelOf :: Ecp5 -> CellInfo BelId WireId PipId -> Maybe BelId
+singletonBelOf e ci = go Nothing (getBels e)
+  where
+    go lastBel [] = lastBel
+    go lastBel (b : rest)
+        | getBelType e b == cellType ci =
+            case lastBel of
+                Nothing -> go (Just b) rest
+                Just _ -> Nothing
+        | otherwise = go lastBel rest
+
+-- | @get_net_metric@ (WIRELENGTH): bbox of placed driver + users.
+netMetricWl :: Packer -> IdString -> Int
+netMetricWl p n =
+    let ni = netOf p n
+     in case prCell (netDriver ni) of
+            Nothing -> 0
+            Just c ->
+                case cellBel (cellOf p c) of
+                    Nothing -> 0
+                    Just bel
+                        | getBelGlobalBuf (pkE p) bel -> 0
+                        | otherwise ->
+                            let Loc dx dy _ = getBelLocation (pkE p) bel
                                 (xmin, xmax, ymin, ymax) =
                                     foldl
                                         (\ (x0, x1, y0, y1) u ->
                                             case prCell u of
-                                                Just uc
-                                                    | M.member (cid pk "BEL") (cellAttrs (cellOf pk uc)) ->
-                                                        case getBelByNameStr pk (T.pack (strOrDef (cellAttrs (cellOf pk uc)) (cid pk "BEL") "")) of
-                                                            Just ub ->
-                                                                let Loc ux uy _ = getBelLocation e ub
-                                                                 in (min x0 ux, max x1 ux, min y0 uy, max y1 uy)
-                                                            Nothing -> (x0, x1, y0, y1)
-                                                _ -> (x0, x1, y0, y1))
+                                                Just uc ->
+                                                    case cellBel (cellOf p uc) of
+                                                        Just ub | not (getBelGlobalBuf (pkE p) ub) ->
+                                                            let Loc ux uy _ = getBelLocation (pkE p) ub
+                                                             in (min x0 ux, max x1 ux, min y0 uy, max y1 uy)
+                                                        _ -> (x0, x1, y0, y1)
+                                                Nothing -> (x0, x1, y0, y1))
                                         (dx, dx, dy, dy)
                                         (activeUsers (netUsers ni))
-                             in ((ymax - ymin) + (xmax - xmin), False)
+                             in (ymax - ymin) + (xmax - xmin)
+
+-- | @has_short_route@: hop count of a < @thresh@ downhill-pip route
+-- from @src@ to @dst@, if one exists.
+hasShortRoute :: Ecp5 -> WireId -> WireId -> Int -> Maybe Int
+hasShortRoute e src dst thresh = go S.empty [(src, 0)]
+  where
+    go seen q =
+        case q of
+            [] -> Nothing
+            ((w, d) : rest)
+                | w == dst -> Just d
+                | d < thresh - 1 ->
+                    let (seen', next) =
+                            foldl
+                                (\ (s, acc) pip ->
+                                    let dstW = getPipDstWire e pip
+                                     in if S.member dstW s then (s, acc) else (S.insert dstW s, acc ++ [(dstW, d + 1)]))
+                                (seen, [])
+                                (getPipsDownhill e w)
+                     in go seen' (rest ++ next)
+                | otherwise -> go seen rest
 
 -- ---------------------------------------------------------------------------
 -- fixupHierarchy (no-op: our design is already flattened)

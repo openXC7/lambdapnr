@@ -31,6 +31,12 @@ mkCell name typ =
         , cellParams = M.empty
         , cellBel = Nothing
         , cellBelStrength = StrengthNone
+        , cellCluster = IdString 0
+        , cellConstrX = 0
+        , cellConstrY = 0
+        , cellConstrZ = 0
+        , cellConstrAbsZ = False
+        , cellConstrChildren = []
         }
 
 addPort :: IdString -> PortDir -> CellInfo DummyBel DummyWire DummyPip -> CellInfo DummyBel DummyWire DummyPip
@@ -49,7 +55,7 @@ setup cellId netId dir =
     d2 =
         addNet
             netId
-            (NetInfo netId (IdString 0) (PortRef Nothing portName) V.empty M.empty M.empty (IdString 0))
+            (NetInfo netId (IdString 0) (PortRef Nothing portName) V.empty [] M.empty M.empty (IdString 0))
             d1
 
 netlistTests :: TestTree
@@ -73,8 +79,8 @@ netlistTests =
                 Nothing -> assertBool "net exists" False
                 Just ni -> do
                     assertEqual "one user" 1 (V.length (netUsers ni))
-                    assertEqual "user cell" (Just (IdString 1)) (prCell (V.head (netUsers ni)))
-                    assertEqual "user port" (i 100) (prPort (V.head (netUsers ni)))
+                    assertEqual "user cell" (Just (IdString 1)) (prCell =<< V.head (netUsers ni))
+                    assertEqual "user port" (Just (i 100)) (prPort <$> V.head (netUsers ni))
                     assertEqual "driver stays dangling" Nothing (prCell (netDriver ni))
         , testCase "disconnect removes the user" $ do
             let d = setup (IdString 1) (IdString 3) PortIn
@@ -82,7 +88,7 @@ netlistTests =
             case lookupNet (IdString 3) d' of
                 Nothing -> assertBool "net exists" False
                 Just ni -> do
-                    assertEqual "user removed" 0 (V.length (netUsers ni))
+                    assertEqual "user removed" 0 (V.length (V.filter (maybe False (const True)) (netUsers ni)))
                     assertEqual
                         "port cleared"
                         Nothing
@@ -107,7 +113,7 @@ netlistTests =
                 d2 =
                     addNet
                         (IdString 3)
-                        (NetInfo (IdString 3) (IdString 0) (PortRef Nothing (i 100)) V.empty M.empty M.empty (IdString 0))
+                        (NetInfo (IdString 3) (IdString 0) (PortRef Nothing (i 100)) V.empty [] M.empty M.empty (IdString 0))
                         d1
                 d3 = connectPort (IdString 1) (i 100) (IdString 3) d2
                 d4 = connectPort (IdString 4) (i 100) (IdString 3) d3
@@ -115,7 +121,7 @@ netlistTests =
                 Nothing -> assertBool "net exists" False
                 Just ni -> do
                     assertEqual "two users" 2 (V.length (netUsers ni))
-                    assertEqual "order preserved" [IdString 1, IdString 4] (map (maybe (IdString 0) id . prCell) (V.toList (netUsers ni)))
+                    assertEqual "order preserved" [IdString 1, IdString 4] (map (maybe (IdString 0) (maybe (IdString 0) id . prCell)) (V.toList (netUsers ni)))
         ]
   where
     mustCell :: Design DummyBel DummyWire DummyPip -> IdString -> CellInfo DummyBel DummyWire DummyPip

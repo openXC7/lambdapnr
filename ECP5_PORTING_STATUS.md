@@ -61,31 +61,29 @@ Working tree is dirty: packer, ArchCellInfo, debug scaffolding.
 
 ## Packer checksum status (rioctrl full design, 12k)
 
-Lineage A (no `--lpf`) — **lambdapnr matches every pass**:
+Lineage B (with `--lpf`, the reference build command) — **lambdapnr matches every
+pass, including the final packing checksum**:
 
-| Pass | C++ (no LPF) | lambdapnr | State |
+| Pass | C++ (with LPF) | lambdapnr | State |
 | --- | --- | --- | --- |
-| after-load | 0x1ccd3d41 | ✓ | match |
-| io | 0x6ac5b8c1 | ✓ | match |
-| plls | 0x4a4fc622 | ✓ | match |
-| ebr | 0xa249f6d7 | ✓ | match |
-| dsps | 0x52403d1c | ✓ | match |
-| constants | 0x66d3d0b0 | ✓ | match |
-| dram | 0x04dd4305 | ✓ | match |
-| carries | 0x27fb1dfc | ✓ | match |
-| luts | 0xe5407960 | ✓ | match |
-| lut5xs | 0x74579b61 | ✓ | match |
-| ffs | 0x19206350 | ✓ | match (fixed this session) |
-| constraints | 0x19206350 | ✓ | match (pass is a checksum no-op both sides) |
-| globals | 0xfef78839 | ✗ | `promoteGlobals` still a no-op in the port |
-| final | — | — | after fixup |
+| after-load | 0x8bc4fbe8 | ✓ | match |
+| io | 0xd1db7350 | ✓ | match (LPF LOC→BEL) |
+| plls | 0x3e257fd2 | ✓ | match |
+| ebr | 0x7efbd6ce | ✓ | match |
+| dsps | 0x19e431ea | ✓ | match |
+| constants | 0x6d11577f | ✓ | match |
+| dram | 0x0bfe42fb | ✓ | match |
+| carries | 0xe571fedd | ✓ | match |
+| luts | 0xa10cd9a8 | ✓ | match |
+| lut5xs | 0x7e9acc50 | ✓ | match |
+| ffs | 0xcb9d5b45 | ✓ | match |
+| constraints | 0xcb9d5b45 | ✓ | match (checksum-neutral both sides) |
+| **globals** | **0xc76929e2** | ✓ | **match — promote_globals ported** |
+| **fixup/final** | **0xc76929e2** | ✓ | **match = the golden in REFERENCE.md** |
 
-Cell-dict **iteration order** verified byte-identical to C++ at every dumped stage
-(load, io, plls, ebr, misc, constants, dram, carries, luts, lut5xs).
-
-Lineage B targets (with `--lpf`), reachable once LPF parsing is ported:
-after-load 0x8bc4fbe8 → io 0xd1db7350 → … → ffs 0xcb9d5b45 → constraints 0xcb9d5b45 →
-**globals/final 0xc76929e2**.
+- State diff (cells/nets/ports/attrs/params/users/bels) vs C++ at globals: **0 entries**.
+- Cell-dict iteration order byte-identical at every dumped stage.
+- Lineage A (no `--lpf`) also still matches: ffs 0x19206350, globals 0xfef78839.
 
 ## Component status matrix
 
@@ -105,17 +103,17 @@ after-load 0x8bc4fbe8 → io 0xd1db7350 → … → ffs 0xcb9d5b45 → constrain
 | Pack: luts/lut5xs | Pack.hs | ✓ PFUMX/L6MUX21 → comb1-half, roots, constraints |
 | Pack: ffs | Pack.hs | ✓ macro branch + canAddFlipflopToMacro + relConstrCells; checksum + state match |
 | Pack: flush machinery | Pack.hs `flushCells` | ✓ erase-before-insert semantics replicated (see bugs #7) |
-| LPF parser | — | ✗ not ported (ecp5/lpf.cc ~200 lines); only CLI wiring exists |
-| pack_io LOC→BEL | Pack.hs | ✗ missing (needs LPF LOC attr first) |
-| generate_constraints | Pack.hs | ⚠ ported; checksum-neutral in C++ too — state not yet diffed |
-| promote_globals | Pack.hs | ✗ no-op stub (C++ changes checksum: 0xfef78839 / 0xc76929e2) |
-| fixup_hierarchy | Pack.hs | ✗ no-op stub |
+| LPF parser | Arch/Ecp5.hs `applyLpf` | ✓ LOCATE/IOBUF/SYSCONFIG/FREQUENCY/BLOCK + `customAfterLoad` check loop in Main.hs |
+| pack_io LOC→BEL | Pack.hs | ✓ `finish` copies attrs, resolves LOC→BEL via `getPackagePinBel` |
+| generate_constraints | Pack.hs | ✓ ported; checksum-neutral; state covered by the globals diff (0 entries) |
+| promote_globals | Pack.hs | ✓ get_clocks + insert_dcc + place_dcc_dcs + DCC metrics + has_short_route; DCCA placement matches C++ (LDCC3/TDCC0) |
+| fixup_hierarchy | Pack.hs | ✓ no-op (C++ final checksum == globals on rioctrl — verified) |
 | Bitgen cell writers (IO/DCC/PLL/DSP/DCU) | Bitgen.hs, DcuBitstream.hs | not started |
 | Base configs | BaseConfigs.hs | ✓ |
 | `.config` writer | Config.hs, Bitgen.hs | ✓ validated via ecppack on earlier milestone |
 | Placer (heap) | — | not started |
 | Router (router1) | — | not started |
-| Tests | test/ (85 tests) | ✓ passing at last commit; rerun after packer lands |
+| Tests | test/ (85 tests) | ✓ 85/85 passing (stale constructors in 5 test files fixed this session) |
 
 ## Key bugs fixed this session (packer/ffs)
 
@@ -141,6 +139,18 @@ after-load 0x8bc4fbe8 → io 0xd1db7350 → … → ffs 0xcb9d5b45 → constrain
 9. `packCarries` — `addNew comb0 (addNew comb1 …)` pushed comb1 before comb0;
    C++ pushes comb0 then comb1 (`new_cells.push_back` order) → pairwise
    COMB0/COMB1 iteration-order swaps.
+10. `idToText` — the newtype pattern `IdString i` doesn't force; on-demand
+    intern thunks (belNameId) were interned AFTER the IORef snapshot read,
+    so freshly interned ids resolved to `""` (`X29/Y0/` BEL attr). Force the
+    index before reading the table.
+11. `getBelByNameStr` — looked bel name parts up in the CONSTID table;
+    `"X2"` is not a constid, so the driver-bel lookup silently failed and
+    `get_dcc_metric` fell back to the wirelength metric (DCC placed at the
+    first free bel instead of the dedicated-route bel). C++ interns the
+    parts via `ctx->id()`.
+12. `insert_dcc` user rewiring — C++ net users are an `indexed_store`
+    (ascending slot order), not a reverse-iterating pool; the rebuild must
+    be kept ++ [dcc CLKI] and glb = moved, both in original user order.
 
 Also verified (no change needed): erase order in flush is `reverse pkPacked`
 (`packed_cells` is a nextpnr `pool` — iterates in REVERSE insertion order, like
@@ -173,18 +183,16 @@ Also verified (no change needed): erase order in flush is `reverse pkPacked`
 
 ## Open problems
 
-1. **Port the LPF parser** (`ecp5/lpf.cc`): LOCATE COMP/SITE, IOBUF PORT attrs,
-   `settings[input/lpf]`; apply attrs to the `$nextpnr_*buf` top-port cells.
-   Then the pack_io LOC→BEL step (`get_package_pin_bel`, `attrs[id_BEL]`).
-   This is the ONLY remaining state delta vs lineage B (2 attrs on `clk25$tr_io`).
-2. **promote_globals** (pack_globals: global net promotion, DCC insertion,
-   clock constraint setup) — currently a no-op; C++ changes checksum to
-   0xfef78839 (no LPF) / 0xc76929e2 (with LPF = golden).
-3. **fixup_hierarchy** — currently a no-op; audit what it must change.
-4. State-diff `generate_constraints` output vs C++ (checksum-neutral both sides,
-   so it can't be verified by LPCHK alone).
-5. Remove debug scaffolding: CANADD/SC/CHAINS/SPLIT traces, packFfs dump
-   (`LP_DUMP_FFS_ORDER`), packDesign `dumpOrd`, `deepseq` hacks, TBL dump;
-   rerun 85-test suite.
-6. Then: bitgen cell writers (IO/DCC/PLL/DSP/DCU) → placer (heap) → router1 →
-   routed `.config` byte comparison + Fmax.
+1. **Placer (heap)** — the big remaining chunk: seed-driven analytic/initial
+   placement, constraint satisfaction, bel binding. Compare against C++ via
+   the placer's log ("Placed N cells...") + binding state.
+2. **Router (router1)** — global clock routing (route_globals) + general
+   BFS ripup-retry; wire/pip binding.
+3. **Packed `.config` comparison** — with placement/routing in place, the
+   textcfg should match `rioctrl_controller.textcfg` byte-for-byte; the
+   pack-stage config currently differs only in the placement/routing section.
+4. Remove debug scaffolding: CANADD/SC/CHAINS/SPLIT traces, `LP_DUMP_FFS_ORDER`
+   + `LP_DUMP_ORDER` order dumps, packFfs dump, `deepseq` hacks, TBL dump
+   (`lambdapnrDebugDump`); keep LPCHK/LPDBG until the final gate.
+5. Timing: arrival/required propagation + Fmax report
+   (reference: crg_clkout 69.73/85.62 MHz).

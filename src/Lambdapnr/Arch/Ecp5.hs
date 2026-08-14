@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -41,10 +42,12 @@ module Lambdapnr.Arch.Ecp5
   , getPackagePinBel
   , getBelPackagePin
   , getPioDqsGroup
+  , applyLpf
   ) where
 
 import Control.Exception (SomeException, try)
-import Control.Monad (unless)
+import Control.Monad (foldM, unless)
+import Data.Char (isSpace)
 import qualified Data.ByteString as BS
 import Data.Functor ((<&>))
 import Data.Int (Int16, Int32)
@@ -64,8 +67,10 @@ import Lambdapnr.Arch.Ecp5.Types (BelId (..), Ecp5Args (..), Ecp5Device (..), Gr
 import Lambdapnr.Kernel.Arch hiding (locX, locY, locZ)
 import Lambdapnr.Kernel.Delay
 import Lambdapnr.Kernel.IdString
-import Lambdapnr.Kernel.Netlist (CellInfo (..), PortDir (..))
+import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, PortDir (..), designCells, setCellAttr)
 import Lambdapnr.Kernel.Timing (TimingClockingInfo, TimingPortClass)
+import Lambdapnr.Kernel.Property (Property (..), propFromString)
+import System.IO (hPutStrLn, stderr)
 
 -- | The ECP5 architecture instance: chipdb + args + interned name ids.
 data Ecp5 = Ecp5
@@ -581,3 +586,185 @@ getPioDqsGroup e bel =
     case V.find (\pi -> locAdd (Location (pioAbsDx pi) (pioAbsDy pi)) (Location 0 0) == belLoc bel && pioBelIndex pi == fromIntegral (belIdx bel)) (cdPios (e5Chipdb e)) of
         Just pi -> Just (fromIntegral (pioDqsGroup pi) < 0, abs (fromIntegral (pioDqsGroup pi)))
         Nothing -> Nothing
+
+
+-- ---------------------------------------------------------------------------
+-- LPF (@ecp5\/lpf.cc@: @Arch::apply_lpf@)
+-- ---------------------------------------------------------------------------
+
+-- | @Arch::apply_lpf@: parse an LPF constraint file (LOCATE \/ IOBUF \/
+-- SYSCONFIG \/ FREQUENCY \/ BLOCK). Applied after JSON load, before
+-- packing. Interning order must match the C++: command words are not
+-- interned, LOCATE interns the cell name (then the [0]-stripped retry),
+-- IOBUF interns each attribute key, and @input\/lpf@ is interned last.
+applyLpf ::
+    Ecp5 ->
+    -- | filename (stored in settings verbatim)
+    Text ->
+    -- | file contents
+    Text ->
+    M.Map IdString Property ->
+    Design BelId WireId PipId ->
+    IO (Either String (M.Map IdString Property, Design BelId WireId PipId))
+applyLpf e filename contents settings d0 = go 1 "" settings d0 (T.lines contents)
+  where
+    tbl = e5IdTable e
+    cidOf t = maybe emptyId id (M.lookup t (e5ConstIdByName e))
+    warn msg = hPutStrLn stderr ("Warning: " ++ msg)
+    sysconfigKeys =
+        [ "SLAVE_SPI_PORT", "MASTER_SPI_PORT", "SLAVE_PARALLEL_PORT"
+        , "BACKGROUND_RECONFIG", "DONE_EX", "DONE_OD"
+        , "DONE_PULL", "MCCLK_FREQ", "TRANSFR"
+        , "CONFIG_IOVOLTAGE", "CONFIG_SECURE", "WAKE_UP"
+        , "COMPRESS_CONFIG", "CONFIG_MODE", "INBUF"
+        ]
+    iobufKeys =
+        [ "IO_TYPE", "BANK", "BANK_VCC", "VREF", "PULLMODE", "DRIVE", "SLEWRATE"
+        , "CLAMP", "OPENDRAIN", "DIFFRESISTOR", "DIFFDRIVE", "HYSTERESIS", "TERMINATION"
+        ]
+    isBlankish c = isSpace c || c == '\r' || c == '\n'
+    isEmptyLine s = T.all isBlankish s
+    cutComment s = let (a, _) = T.breakOn "#" s in fst (T.breakOn "//" a)
+    stripQuotes lineno str
+        | T.null str = str
+        | T.head str == '"' =
+            if T.last str /= '"'
+                then errAt lineno ("expected '\"' at end of string '" ++ T.unpack str ++ "'")
+                else T.dropEnd 1 (T.drop 1 str)
+        | otherwise = str
+    errAt lineno m = error ("lpf " ++ show lineno ++ ": " ++ m)
+    setAttr cell key val d = setCellAttr cell key (propFromString val) d
+
+    go :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> [Text] -> IO (Either String (M.Map IdString Property, Design BelId WireId PipId))
+    go _ linebuf st d [] =
+        if isEmptyLine linebuf
+            then do
+                inputLpf <- intern tbl "input/lpf"
+                pure (Right (M.insert inputLpf (propFromString filename) st, d))
+            else pure (Left "unexpected end of LPF file")
+    go lineno linebuf st d (line : rest) =
+        let line' = cutComment line
+         in if isEmptyLine line'
+                then go (lineno + 1) linebuf st d rest
+                else execCommands lineno (linebuf <> line') st d rest
+
+    execCommands :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> [Text] -> IO (Either String (M.Map IdString Property, Design BelId WireId PipId))
+    execCommands lineno buf st d rest =
+        case T.breakOn ";" buf of
+            (cmd, after)
+                | not (T.null after) -> do
+                    r <- try (execCommand lineno cmd st d)
+                    case r of
+                        Left (err :: SomeException) -> pure (Left (show err))
+                        Right (st', d') -> execCommands lineno (T.drop 1 after) st' d' rest
+            _ -> go (lineno + 1) buf st d rest
+
+    execCommand :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> IO (M.Map IdString Property, Design BelId WireId PipId)
+    execCommand lineno cmd st d =
+        case T.words cmd of
+            [] -> pure (st, d)
+            (verb : ws) -> do
+                if
+                    | verb == "BLOCK" ->
+                        case ws of
+                            [w] | w == "ASYNCPATHS" || w == "RESETPATHS" -> pure (st, d)
+                            _ -> warn ("ignoring unsupported LPF command '" ++ T.unpack cmd ++ "' (on line " ++ show lineno ++ ")") >> pure (st, d)
+                    | verb == "SYSCONFIG" -> do
+                        st' <- foldM (sysconfigOne lineno) st ws
+                        pure (st', d)
+                    | verb == "FREQUENCY" ->
+                        case ws of
+                            [] -> errAt lineno "expected object type after FREQUENCY"
+                            (etype : rest') ->
+                                if etype == "PORT" || etype == "NET"
+                                    then
+                                        if length rest' < 3
+                                            then errAt lineno ("expected frequency value and unit after 'FREQUENCY " ++ T.unpack etype ++ "'")
+                                            else
+                                                let target = stripQuotes lineno (rest' !! 0)
+                                                    freqTxt = rest' !! 1
+                                                    unit = T.toUpper (rest' !! 2)
+                                                    freqMhz =
+                                                        case reads (T.unpack freqTxt) :: [(Double, String)] of
+                                                            [] -> Nothing
+                                                            ((f, _) : _) ->
+                                                                if unit == "MHZ" then Just f
+                                                                else if unit == "KHZ" then Just (f / 1.0e3)
+                                                                else if unit == "HZ" then Just (f / 1.0e6)
+                                                                else Nothing
+                                                 in case freqMhz of
+                                                        Nothing
+                                                            | unit /= "MHZ" && unit /= "KHZ" && unit /= "HZ" ->
+                                                                errAt lineno ("unsupported frequency unit '" ++ T.unpack unit ++ "'")
+                                                            | otherwise -> errAt lineno ("invalid frequency value '" ++ T.unpack freqTxt ++ "'")
+                                                        Just _ -> do
+                                                            _ <- intern tbl target
+                                                            warn ("FREQUENCY clock constraints not yet supported (ignoring " ++ T.unpack target ++ ")")
+                                                            pure (st, d)
+                                    else warn ("ignoring unsupported LPF command '" ++ T.unpack cmd ++ " " ++ T.unpack etype ++ "' (on line " ++ show lineno ++ ")") >> pure (st, d)
+                    | verb == "LOCATE" -> do
+                        if length ws < 4
+                            then errAt lineno "expected syntax 'LOCATE COMP <port name> SITE <pin>'"
+                            else
+                                if ws !! 0 /= "COMP"
+                                    then errAt lineno "expected 'COMP' after 'LOCATE'"
+                                    else
+                                        let cell = stripQuotes lineno (ws !! 1)
+                                         in if ws !! 2 /= "SITE"
+                                                then errAt lineno ("expected 'SITE' after 'LOCATE COMP " ++ T.unpack cell ++ "'")
+                                                else
+                                                    if length ws > 4
+                                                        then errAt lineno "unexpected input following LOCATE clause"
+                                                        else do
+                                                            cellId <- intern tbl cell
+                                                            (foundId, cellId') <-
+                                                                case M.lookup cellId (designCells d) of
+                                                                    Just _ -> pure (True, cellId)
+                                                                    Nothing
+                                                                        | T.length cell >= 3 && T.isSuffixOf "[0]" cell -> do
+                                                                            cellId2 <- intern tbl (T.dropEnd 3 cell)
+                                                                            pure (M.member cellId2 (designCells d), cellId2)
+                                                                        | otherwise -> pure (False, cellId)
+                                                            pure
+                                                                ( st
+                                                                , if foundId then setAttr cellId' (cidOf "LOC") (stripQuotes lineno (ws !! 3)) d else d
+                                                                )
+                    | verb == "IOBUF" -> do
+                        if length ws < 2
+                            then errAt lineno "expected syntax 'IOBUF PORT <port name> <attr>=<value>...'"
+                            else
+                                if ws !! 0 /= "PORT"
+                                    then errAt lineno "expected 'PORT' after 'IOBUF'"
+                                    else do
+                                        let cell = stripQuotes lineno (ws !! 1)
+                                        cellId <- intern tbl cell
+                                        d' <-
+                                            if M.member cellId (designCells d)
+                                                then foldM (iobufOne lineno cell cellId) d (drop 2 ws)
+                                                else pure d
+                                        pure (st, d')
+                    | otherwise -> pure (st, d)
+
+    sysconfigOne :: Int -> M.Map IdString Property -> Text -> IO (M.Map IdString Property)
+    sysconfigOne lineno st setting =
+        let (key, after) = T.breakOn "=" setting
+         in if T.null after
+                then errAt lineno "expected syntax 'SYSCONFIG <attr>=<value>...'"
+                else
+                    if key `notElem` sysconfigKeys
+                        then errAt lineno ("unexpected SYSCONFIG key '" ++ T.unpack key ++ "'")
+                        else do
+                            keyId <- intern tbl ("arch.sysconfig." <> key)
+                            pure (M.insert keyId (propFromString (T.drop 1 after)) st)
+
+    iobufOne :: Int -> Text -> IdString -> Design BelId WireId PipId -> Text -> IO (Design BelId WireId PipId)
+    iobufOne lineno cell cellId d setting =
+        let (key, after) = T.breakOn "=" setting
+         in if T.null after
+                then errAt lineno "expected syntax 'IOBUF PORT <port name> <attr>=<value>...'"
+                else do
+                    if key `notElem` iobufKeys
+                        then warn ("IOBUF '" ++ T.unpack cell ++ "' attribute '" ++ T.unpack key ++ "' is not recognised (on line " ++ show lineno ++ ")")
+                        else pure ()
+                    keyId <- intern tbl key
+                    pure (setAttr cellId keyId (T.drop 1 after) d)

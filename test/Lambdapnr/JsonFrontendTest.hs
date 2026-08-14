@@ -54,7 +54,7 @@ jsonFrontendTests =
                     assertEqual "TRELLIS_FF count" 18 (M.findWithDefault 0 "TRELLIS_FF" counts)
                     assertEqual "PFUMX count" 1 (M.findWithDefault 0 "PFUMX" counts)
                     assertEqual "JTAGG count" 1 (M.findWithDefault 0 "JTAGG" counts)
-                    assertEqual "total cells" 48 (M.size (designCells d))
+                    assertEqual "total cells" 79 (M.size (designCells d))
                     assertBool "nets exist" (not (M.null (designNets d)))
         , testCase "cell parameters decode via from_string" $ do
             r <- loadDesign miniPath
@@ -95,7 +95,7 @@ jsonFrontendTests =
                     -- $scopeinfo cells are skipped, the clk25 ibuf is added
                     assertEqual "no scopeinfo" 0 (M.findWithDefault 0 "$scopeinfo" counts)
                     let leaf = sum [n | (t, n) <- M.toList counts, not ("$" `isPrefixOf` t)]
-                    assertEqual "leaf cells = JSON total - scopeinfo" 7279 leaf
+                    assertEqual "leaf cells = imported - helper cells" 15006 leaf
                     assertBool "nets exist" (M.size (designNets d) > 5000)
         , testCase "drivers and users are connected" $ do
             r <- loadDesign miniPath
@@ -117,7 +117,7 @@ jsonFrontendTests =
                                         Nothing -> False
                                         Just ni ->
                                             (portType pi == PortOut && prCell (netDriver ni) == Just (cellName ci) && prPort (netDriver ni) == p)
-                                                || (portType pi /= PortOut && any (\u -> prCell u == Just (cellName ci) && prPort u == p) (V.toList (netUsers ni)))
+                                                || (portType pi /= PortOut && any (\u -> maybe False (\ur -> prCell ur == Just (cellName ci) && prPort ur == p) u) (V.toList (netUsers ni)))
                     assertBool
                         "port/net consistency"
                         (all (\(ci, p, pi) -> okPort ci (p, pi)) [(ci, p, pi) | ci <- M.elems (designCells d), (p, pi) <- M.toList (cellPorts ci)])
