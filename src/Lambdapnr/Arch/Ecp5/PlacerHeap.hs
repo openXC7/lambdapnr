@@ -10,6 +10,7 @@ module Lambdapnr.Arch.Ecp5.PlacerHeap
   , PlacerState (..)
   , emptyPlacerState
   , placeHeapSeed
+  , placeHeapInitialIters
   ) where
 
 import qualified Data.Map.Strict as M
@@ -17,6 +18,7 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import System.Environment (lookupEnv)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -28,7 +30,10 @@ import Lambdapnr.Arch.Ecp5.Chipdb (belAt, biZ)
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), Ecp5Device (..), Location (..), eaDevice)
 import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelGlobalBuf, getBelLocation, getBelByName, getBels, getBelsByTile, getBelType, isValidBelForCellType)
 import Lambdapnr.Kernel.DeterministicRng (Rng, shuffle)
-import Lambdapnr.Kernel.IdString (IdString, IdTable, emptyId, idToText, intern)
+import Foreign (Ptr, mallocArray, peekArray, withArray)
+import Foreign.C.Types (CDouble (..), CInt (..))
+import Foreign.Storable (peek, poke)
+import Lambdapnr.Kernel.IdString (IdString (..), IdTable, emptyId, idToText, intern)
 import Lambdapnr.Kernel.Netlist
 import Lambdapnr.Kernel.Property (propAsString)
 
@@ -36,6 +41,8 @@ import Lambdapnr.Kernel.Property (propAsString)
 data CellLoc = CellLoc
     { plcX :: !Int
     , plcY :: !Int
+    , plcRawX :: !Double
+    , plcRawY :: !Double
     , plcLocked :: !Bool
     , plcGlobal :: !Bool
     }
@@ -203,7 +210,7 @@ seedPlacement e cidOf d ps =
                     let Loc lx ly _ = getBelLocation eAcc bel
                      in ( eAcc
                         , dAcc
-                        , M.insert (cellName ci) (CellLoc lx ly True (getBelGlobalBuf eAcc bel)) locsAcc
+                        , M.insert (cellName ci) (CellLoc lx ly (fromIntegral lx) (fromIntegral ly) True (getBelGlobalBuf eAcc bel)) locsAcc
                         , placeAcc
                         , usedAcc
                         , rngAcc
@@ -223,7 +230,7 @@ seedPlacement e cidOf d ps =
                             bel = pick list usedAcc
                             availAcc' = M.insert t (filter (/= bel) list) availAcc
                             Loc lx ly _ = getBelLocation eAcc bel
-                            loc = CellLoc lx ly False (getBelGlobalBuf eAcc bel)
+                            loc = CellLoc lx ly (fromIntegral lx) (fromIntegral ly) False (getBelGlobalBuf eAcc bel)
                          in if hasConnectivity d ci && cellType ci /= ioBuf
                                 then ( eAcc
                                      , dAcc
@@ -300,7 +307,7 @@ updateAllChains d locs placeCells maxX maxY =
                     ( \acc' (cname, dx, dy) ->
                         M.insert
                             cname
-                            ( (M.findWithDefault (CellLoc 0 0 False False) cname acc')
+                            ( (M.findWithDefault (CellLoc 0 0 0 0 False False) cname acc')
                                 { plcX = max 0 (min maxX (plcX base + dx))
                                 , plcY = max 0 (min maxY (plcY base + dy))
                                 }
@@ -404,3 +411,212 @@ dspLocationValid e cidOf d cell =
                                 Nothing -> True
                                 Just bcName -> all (okGroup (M.findWithDefault (error "dsp bc") bcName (designCells d))) groups
              in all go [0, 1, 3, 4, 5, 7]
+
+
+-- ---------------------------------------------------------------------------
+-- Equation solving (placer_heap.cc: EquationSystem + build/solve_equations)
+-- ---------------------------------------------------------------------------
+
+-- | The C++ @EquationSystem@: sparse columns (sorted, unique rows) + RHS.
+data EqSys = EqSys
+    { esCols :: ![[(Int, Double)]]
+    , esRhs :: ![Double]
+    }
+
+emptyEqSys :: Int -> EqSys
+emptyEqSys n = EqSys (replicate n []) (replicate n 0)
+
+-- | @add_coeff@: accumulate into the sorted column (binary-search insert).
+addCoeff :: EqSys -> Int -> Int -> Double -> EqSys
+addCoeff es row col val =
+    es{esCols = updateNth col (ins row val) (esCols es)}
+  where
+    ins r v [] = [(r, v)]
+    ins r v ((r', x) : rest)
+        | r' == r = (r', x + v) : rest
+        | r' > r = (r, v) : (r', x) : rest
+        | otherwise = (r', x) : ins r v rest
+
+-- | @add_rhs@.
+addRhs :: EqSys -> Int -> Double -> EqSys
+addRhs es row val = es{esRhs = updateNth row (+ val) (esRhs es)}
+
+updateNth :: Int -> (a -> a) -> [a] -> [a]
+updateNth i f xs = case splitAt i xs of
+    (pre, x : post) -> pre ++ (f x : post)
+    _ -> xs
+
+-- | The Eigen CG solver (same call as the C++: ConjugateGradient with
+-- tolerance, solveWithGuess).
+solveEqSys :: Double -> EqSys -> [Double] -> [Double]
+solveEqSys tol (EqSys cols rhs) guess =
+    let colptr = scanl (\acc c -> acc + length c) 0 cols
+        (rows, vals) = unzip [(r, v) | c <- cols, (r, v) <- c]
+     in unsafePerformIO $
+            withArray (map fromIntegral colptr) $ \cp ->
+                withArray (map fromIntegral rows) $ \rp ->
+                    withArray (map realToFrac vals) $ \vp ->
+                        withArray (map realToFrac rhs) $ \bp ->
+                            withArray (map realToFrac guess) $ \gp -> do
+                                out <- mallocArray (length cols)
+                                _ <- c_lpSolveCg (fromIntegral (length cols)) cp rp vp bp gp (realToFrac tol) out
+                                map realToFrac <$> peekArray (length cols) out
+
+foreign import ccall unsafe "lp_solve_cg"
+    c_lpSolveCg :: CInt -> Ptr CInt -> Ptr CInt -> Ptr CDouble -> Ptr CDouble -> Ptr CDouble -> CDouble -> Ptr CDouble -> IO CInt
+
+-- | @build_equations@ for one axis. @udata@ maps solve cells to rows;
+-- any other cell is @dont_solve@.
+buildEquations ::
+    (IdString -> String) ->
+    Design BelId WireId PipId ->
+    M.Map IdString CellLoc ->
+    [IdString] ->
+    M.Map IdString Int ->
+    Bool ->
+    EqSys
+buildEquations nm d locs solveCells udata yaxis =
+    let nets = netsIter d
+        (es, nPass) = foldl netEq (emptyEqSys (length solveCells), 0 :: Int) nets
+        dbg =
+            unsafePerformIO $ do
+                want <- lookupEnv "LP_DUMP_MATRIX"
+                case want of
+                    Just _ -> do
+                        writeFile "/tmp/hs_net_order.txt" (unlines (map (show . unIdString . netName) nets))
+                        hPutStrLn stderr ("LPDBG nets " ++ show (length nets) ++ " passed " ++ show nPass)
+                    Nothing -> pure ()
+     in dbg `seq` es
+  where
+    locOf c = M.findWithDefault (CellLoc 0 0 0 0 False False) c locs
+    cellPos c = let l = locOf c in if yaxis then plcY l else plcX l
+    -- ports of a net in the C++ foreach_port order: driver first (no
+    -- user idx), then users in slot order (with idx)
+    portsOf ni =
+        (case prCell (netDriver ni) of
+            Just drv -> [(drv, prPort (netDriver ni), False)]
+            Nothing -> [])
+            ++ [ (uc, prPort u, True)
+               | Just u <- V.toList (netUsers ni)
+               , Just uc <- [prCell u]
+               ]
+    numUsers ni = length [() | Just _ <- V.toList (netUsers ni)]
+    clusterOff c =
+        case M.lookup c (designCells d) of
+            Just ci
+                | cellCluster ci /= emptyId -> Just (cellConstrX ci, cellConstrY ci)
+            _ -> Nothing
+    netEq (es, n) ni
+        | prCell (netDriver ni) == Nothing = (es, n)
+        | numUsers ni == 0 = (es, n)
+        | plcGlobal (locOf (fromMaybe emptyId (prCell (netDriver ni)))) = (es, n)
+        | otherwise =
+            let ports = portsOf ni
+                pos p = cellPos (fst3 p)
+                -- strict comparisons keep the FIRST min/max occurrence
+                lbp = foldl1 (\a b -> if pos b < pos a then b else a) ports
+                ubp = foldl1 (\a b -> if pos b > pos a then b else a) ports
+                stamp es' (vc, _, _) (ec, _, _) w =
+                    case M.lookup ec udata of
+                        Nothing -> es'
+                        Just row ->
+                            let vPos = fromIntegral (cellPos vc)
+                                es1 =
+                                    case M.lookup vc udata of
+                                        Just vcol -> addCoeff es' row vcol w
+                                        Nothing -> addRhs es' row (-vPos * w)
+                                es2 =
+                                    case clusterOff vc of
+                                        Just (ox, oy) ->
+                                            let o = if yaxis then fromIntegral oy else fromIntegral ox
+                                             in addRhs es1 row (-o * w)
+                                        Nothing -> es1
+                             in es2
+                processArc es' p other =
+                    if fst3 p == fst3 other && snd3 p == snd3 other
+                        then es'
+                        else
+                            let oPos = fromIntegral (cellPos (fst3 other))
+                                thisPos = fromIntegral (cellPos (fst3 p))
+                                -- timing criticality is 0 until the
+                                -- timing engine lands (weight multiplier
+                                -- becomes 1.0)
+                                w =
+                                    1.0
+                                        / ( fromIntegral (numUsers ni)
+                                                * max 1 ((if yaxis then 1 else 1) * abs (oPos - thisPos))
+                                          )
+
+                             in stamp (stamp (stamp (stamp es' p p w) p other (-w)) other other w) other p (-w)
+                arcEq es' p = processArc (processArc es' p lbp) p ubp
+             in (foldl arcEq es ports, n + 1)
+    fst3 (c, _, _) = c
+    snd3 (_, p, _) = p
+
+-- | @solve_equations@ for one axis: solve, then write the positions
+-- back (truncation toward zero + clamp).
+solveAxis ::
+    Design BelId WireId PipId ->
+    Int ->
+    Int ->
+    M.Map IdString CellLoc ->
+    [IdString] ->
+    EqSys ->
+    Bool ->
+    M.Map IdString CellLoc
+solveAxis d maxX maxY locs solveCells es yaxis =
+    let locOf c = M.findWithDefault (CellLoc 0 0 0 0 False False) c locs
+        guess = [fromIntegral (if yaxis then plcY (locOf c) else plcX (locOf c)) | c <- solveCells]
+        out = solveEqSys 1e-5 es guess
+        go acc (c, v) =
+            let l = locOf c
+             in if yaxis
+                    then M.insert c l{plcRawY = v, plcY = max 0 (min maxY (truncate v))} acc
+                    else M.insert c l{plcRawX = v, plcX = max 0 (min maxX (truncate v))} acc
+     in foldl go locs (zip solveCells out)
+
+-- | The 4 initial solve iterations of @place()@ (build + solve each
+-- axis 5 times, then chain-update and report).
+placeHeapInitialIters ::
+    Ecp5 ->
+    (T.Text -> Maybe IdString) ->
+    Design BelId WireId PipId ->
+    PlacerState ->
+    IO PlacerState
+placeHeapInitialIters e cidOf d ps0 = do
+    writeFile "/tmp/hs_net_names.txt" (unlines [T.unpack (idToText (ecp5IdTable e) (netName ni)) | ni <- netsIter d])
+    go ps0 (0 :: Int)
+  where
+    go ps i
+        | i >= 4 = pure ps
+        | otherwise = do
+            let solveCells = psPlaceCells ps
+                udata = M.fromList (zip solveCells [0 ..])
+                solveDirection yaxis pAcc =
+                    let step (nStep, pAcc') _ =
+                            let es = buildEquations (\n -> T.unpack (idToText (ecp5IdTable e) n)) d (psLocs pAcc') solveCells udata yaxis
+                                dbg =
+                                    if i == 0 && not yaxis && nStep <= 2
+                                        then
+                                            let ls =
+                                                    [ show r ++ " " ++ show c ++ " " ++ show v
+                                                    | (c, col) <- zip [0 ..] (esCols es)
+                                                    , (r, v) <- col
+                                                    ]
+                                                        ++ ["RHS " ++ show r ++ " " ++ show v | (r, v) <- zip [0 ..] (esRhs es)]
+                                             in unsafePerformIO $ do
+                                                    want <- lookupEnv "LP_DUMP_MATRIX"
+                                                    case want of
+                                                        Just _ -> writeFile ("/tmp/hs_matrix" ++ show nStep ++ ".txt") (unlines ls)
+                                                        Nothing -> pure ()
+                                        else ()
+                             in dbg `seq` ( nStep + 1
+                                , pAcc'{psLocs = solveAxis d (psMaxX pAcc') (psMaxY pAcc') (psLocs pAcc') solveCells es yaxis}
+                                )
+                     in snd (foldl step (1, pAcc) [1 .. 5])
+                ps1 = solveDirection False ps
+                ps2 = solveDirection True ps1
+                ps3 = ps2{psLocs = updateAllChains d (psLocs ps2) solveCells (psMaxX ps2) (psMaxY ps2)}
+                hpwl = totalHpwl d (psLocs ps3)
+            hPutStrLn stderr ("    at initial placer iter " ++ show i ++ ", wirelen = " ++ show hpwl)
+            go ps3 (i + 1)

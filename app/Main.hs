@@ -26,7 +26,7 @@ import Lambdapnr.Arch.Ecp5.ArchCellInfo (assignArchInfo)
 import Lambdapnr.Arch.Ecp5.Bitgen (buildConfig)
 import Lambdapnr.Arch.Ecp5.Config (renderChipConfig)
 import Lambdapnr.Arch.Ecp5.Pack (Packer, designOf, packDesign)
-import Lambdapnr.Arch.Ecp5.PlacerHeap (CellLoc (..), PlacerState (..), emptyPlacerState, placeHeapSeed)
+import Lambdapnr.Arch.Ecp5.PlacerHeap (CellLoc (..), PlacerState (..), emptyPlacerState, placeHeapInitialIters, placeHeapSeed)
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), PipId (..), WireId (..), eaDevice)
 import Lambdapnr.CLI (Command (..), applyGeneralOpts, checkSingleDevice, ecp5ArgsFromOpts, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
@@ -166,6 +166,7 @@ runFlow prog opts = case checkSingleDevice opts of
                                                     _ <- evaluate (rngState (psRng ps))
                                                     hPutStrLn stderr ("Placed " ++ show nConstr ++ " cells based on constraints.")
                                                     hPutStrLn stderr ("Creating initial analytic placement for " ++ show (length (psPlaceCells ps)) ++ " cells, random placement wirelen = " ++ show hpwl0 ++ ".")
+                                                    _ <- placeHeapInitialIters arch (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))) dPacked ps
                                                     writeFile "/tmp/hs_seed_dump.txt" (unlines ([ "SEED " ++ T.unpack (idToText (ctxIdTable ctx') c) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | c <- psPlaceCells ps, Just l <- [M.lookup c (psLocs ps)]] ++ [ "LOCK " ++ T.unpack (idToText (ctxIdTable ctx') n) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | (n, l) <- M.toList (psLocs ps), plcLocked l ]))
                                                     case lookup "textcfg" opts of
                                                         Just (Just cfgFile) -> do
