@@ -3,3 +3,10 @@ compile_commands.json
 dist-newstyle/
 result
 __pycache__/
+
+# GHC build artifacts
+src/**/*.hi
+src/**/*.o
+
+# heap profiles
+*.hp
