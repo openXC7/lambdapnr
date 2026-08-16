@@ -70,7 +70,7 @@ rioctrl reference design, pass by pass.
 | 3 | Binding state, fanout-aware pip delays, cell timing | 8a0ac2b |
 | 4 | All device variants (12k–85k), full CLI option table | a4bb50d |
 | 5 | CLI option semantics + archcheck `--test` | 0c5f22e |
-| 6 | yosys JSON frontend + rioctrl reference conformance | aee8612 |
+| 13 | Placer: HeAP main loop (spread/legalise) at bit-exact parity through 20 iterations | 4512822 |
 | 7 | prjtrellis `.config` writer, base configs, bitgen | a742093 |
 | 8 | **Packer: all passes through ffs at parity** (uncommitted) | — |
 | 9 | Packer final: LPF parser, globals, golden pack checksum | 2572185 |
