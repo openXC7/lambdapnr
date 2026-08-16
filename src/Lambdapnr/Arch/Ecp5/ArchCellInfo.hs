@@ -28,7 +28,7 @@ module Lambdapnr.Arch.Ecp5.ArchCellInfo (
     belFfZ,
     belRamwZ,
 ) where
-
+import System.IO.Unsafe (unsafePerformIO)
 import Data.Bits (shiftL, (.&.), (.|.))
 import Debug.Trace (trace)
 import Data.Map.Strict (Map)
@@ -37,7 +37,7 @@ import qualified Data.Vector as V
 
 import qualified Data.Text as T
 
-import Lambdapnr.Kernel.IdString (IdString, emptyId)
+import Lambdapnr.Kernel.IdString (IdString, emptyId, unIdString)
 import Lambdapnr.Kernel.Netlist
 import Lambdapnr.Kernel.Property (Property, propAsInt64, propIsString, propAsString)
 
@@ -314,14 +314,17 @@ slicesCompatible ::
     -- | slot z (0..31) -> cell (Nothing = free)
     (Int -> Maybe (CellInfo bel wire pip, ArchInfo)) ->
     Bool
+{-# NOINLINE slicesCompatible #-}
 slicesCompatible slotCell =
-    goSlice 0 && goTile
+    let gs = goSlice 0
+        gt = goTile
+        _dbgC = unsafePerformIO (appendFile "/tmp/hs_comp.txt" ("gs=" ++ show gs ++ " gt=" ++ show gt ++ "\n"))
+     in _dbgC `seq` (gs && gt)
   where
     -- per-slice checks
     goSlice sl
         | sl >= 4 = True
         | otherwise =
-            trace ("SC slice " ++ show sl) $
             let ramwUsed = sl == 2 && case slotCell ((sl * 2) `shiftL` lcIdxShift .|. belRamwZ) of
                     Just _ -> True
                     Nothing -> False
@@ -332,7 +335,6 @@ slicesCompatible slotCell =
             | l >= 2 = case acc of
                 (ok, _, _, _) -> ok
             | otherwise =
-                trace ("SC step " ++ show sl ++ " " ++ show l) $
                 let comb = slotCell (((sl * 2 + l) `shiftL` lcIdxShift) .|. belCombZ)
                     ff = slotCell (((sl * 2 + l) `shiftL` lcIdxShift) .|. belFfZ)
                     -- comb checks
@@ -365,13 +367,14 @@ slicesCompatible slotCell =
                     -- ff checks
                     (okPrev, foundFfPrev, lastFlags, lastCe) = acc
                     (ok1, foundFf1, lastFlags1, lastCe1) = case ff of
-                        Nothing -> (ok0, foundFfPrev, lastFlags, lastCe)
+                        Nothing -> (okPrev && ok0, foundFfPrev, lastFlags, lastCe)
                         Just (c, ai) ->
                             let FfInfo flags _ _ ceSig _ = lookupFf (cellName c) ai
                                 okM = not (combMUsed && hasFlag flags (ffFlag FfMUsed))
                              in if foundFfPrev
                                     then
                                         ( okPrev
+                                            && ok0
                                             && okM
                                             && hasFlag flags (ffFlag FfGsrEn) == hasFlag lastFlags (ffFlag FfGsrEn)
                                             && hasFlag flags (ffFlag FfCeConst) == hasFlag lastFlags (ffFlag FfCeConst)
@@ -381,8 +384,12 @@ slicesCompatible slotCell =
                                         , lastFlags
                                         , lastCe
                                         )
-                                    else (okPrev && okM, True, flags, ceSig)
-                 in step (l + 1) (ok1, foundFf1, lastFlags1, lastCe1)
+                                    else (okPrev && ok0 && okM, True, flags, ceSig)
+                    _dbgStep =
+                        if sl == 0
+                            then unsafePerformIO (appendFile "/tmp/hs_slice.txt" ("l=" ++ show l ++ " comb=" ++ (case comb of Just _ -> "Y"; Nothing -> "N") ++ " combMUsed=" ++ show combMUsed ++ " ff=" ++ (case ff of Just (c, _) -> "Y:" ++ show (unIdString (cellName c)); Nothing -> "N") ++ " ok0=" ++ show ok0 ++ " ok1=" ++ show ok1 ++ " key=" ++ show (((sl * 2 + l) `shiftL` lcIdxShift) .|. belFfZ) ++ "\n"))
+                            else ()
+                 in _dbgStep `seq` step (l + 1) (ok1, foundFf1, lastFlags1, lastCe1)
     -- per-tile control-set checks
     goTile =
         let (ok, _, _, _, _, _, _, _) = tileStep 0 (True, False, False, False, False, False, emptyId, emptyId)
@@ -390,7 +397,6 @@ slicesCompatible slotCell =
     tileStep i (ok, foundGf, foundGd, clkInv, lsrInv, async, clkSig, lsrSig)
         | i >= 8 = (ok, foundGf, foundGd, clkInv, lsrInv, async, clkSig, lsrSig)
         | otherwise =
-            trace ("SC tile " ++ show i) $
             -- DPRAM comb (bottom half of the tile)
             let (ok0, foundGd1, clkInv1, lsrInv1) =
                     if i < 4

@@ -26,7 +26,7 @@ import Lambdapnr.Arch.Ecp5.ArchCellInfo (assignArchInfo)
 import Lambdapnr.Arch.Ecp5.Bitgen (buildConfig)
 import Lambdapnr.Arch.Ecp5.Config (renderChipConfig)
 import Lambdapnr.Arch.Ecp5.Pack (Packer, designOf, packDesign)
-import Lambdapnr.Arch.Ecp5.PlacerHeap (CellLoc (..), PlacerState (..), emptyPlacerState, placeHeapInitialIters, placeHeapSeed)
+import Lambdapnr.Arch.Ecp5.PlacerHeap (CellLoc (..), PlacerState (..), emptyPlacerState, placeHeapInitialIters, placeHeapMain, placeHeapSeed)
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), PipId (..), WireId (..), eaDevice)
 import Lambdapnr.CLI (Command (..), applyGeneralOpts, checkSingleDevice, ecp5ArgsFromOpts, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
@@ -162,19 +162,26 @@ runFlow prog opts = case checkSingleDevice opts of
                                                     _ <- evaluate (designCells dPacked)
                                                     -- placer stage 1: constraints + seed + initial HPWL
                                                     hPutStrLn stderr (printf "LPDBG rngstate %016x" (rngState (ctxRng ctx')))
-                                                    let (_, _, ps, nConstr, hpwl0) = placeHeapSeed arch (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))) dPacked (emptyPlacerState (ctxRng ctx'))
+                                                    let (_, d2, ps, nConstr, hpwl0) = placeHeapSeed arch (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))) dPacked (emptyPlacerState (ctxRng ctx'))
                                                     _ <- evaluate (rngState (psRng ps))
                                                     hPutStrLn stderr ("Placed " ++ show nConstr ++ " cells based on constraints.")
                                                     hPutStrLn stderr ("Creating initial analytic placement for " ++ show (length (psPlaceCells ps)) ++ " cells, random placement wirelen = " ++ show hpwl0 ++ ".")
-                                                    _ <- placeHeapInitialIters arch (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))) dPacked ps
+                                                    ps1 <- placeHeapInitialIters arch (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))) dPacked ps
                                                     writeFile "/tmp/hs_seed_dump.txt" (unlines ([ "SEED " ++ T.unpack (idToText (ctxIdTable ctx') c) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | c <- psPlaceCells ps, Just l <- [M.lookup c (psLocs ps)]] ++ [ "LOCK " ++ T.unpack (idToText (ctxIdTable ctx') n) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | (n, l) <- M.toList (psLocs ps), plcLocked l ]))
+                                                    (arch2, dPlaced, _ps2) <- placeHeapMain arch (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))) d2 ps1
+                                                    let cksum2 = checksum
+                                                            (fromIntegral . belIdx)
+                                                            (fromIntegral . wireIdx)
+                                                            (fromIntegral . pipIdx)
+                                                            dPlaced
+                                                    hPutStrLn stderr (printf "Post-place checksum: 0x%08x" cksum2)
                                                     case lookup "textcfg" opts of
                                                         Just (Just cfgFile) -> do
-                                                            let cc = buildConfig arch ai dPacked settings'
+                                                            let cc = buildConfig arch2 ai dPlaced settings'
                                                             TIO.writeFile cfgFile (renderChipConfig cc)
                                                             hPutStrLn stderr (prog ++ ": wrote text config to " ++ cfgFile)
-                                                            die prog "placing not yet implemented"
-                                                        _ -> die prog "placing not yet implemented"
+                                                            die prog "router not yet implemented"
+                                                        _ -> die prog "router not yet implemented"
                                         _ -> die prog "no JSON design file specified"
 
 -- | @ECP5CommandHandler::customAfterLoad@: parse every @--lpf@ file via

@@ -67,7 +67,7 @@ executable lambdapnr
   hs-source-dirs:   app
   main-is:          Main.hs
   -- hard heap cap so --test on the largest parts can never OOM the machine
-  ghc-options:      -with-rtsopts=-M4G
+  ghc-options:      -rtsopts -with-rtsopts=-M4G
   -- the Eigen CG solver shim: same headers + optimisation level as the
   -- reference nextpnr build (Eigen 3.5.0 from /usr/include/eigen3)
   cxx-sources:      cbits/eigen_solver.cc

@@ -23,6 +23,8 @@ off).
 -}
 module Lambdapnr.Kernel.TimingAnalyser (
     ArrivReqTime (..),
+    CellArc (..),
+    CellArcType (..),
     CellPortKey (..),
     PerDomain (..),
     PerDomainPair (..),
@@ -855,7 +857,7 @@ computeSlack ::
     [PerDomainPair] ->
     (M.Map CellPortKey PerPort, [PerDomainPair])
 computeSlack topo domains clockDelays _setupOnly ports0 pairs0 =
-    foldl portStep (ports0, pairs0) topo
+    foldl portStep (ports0, map (\p -> p{pdpWorstSetupSlack = maxBound}) pairs0) topo
   where
     portStep (portsAcc, pairsAcc) key =
         case M.lookup key portsAcc of

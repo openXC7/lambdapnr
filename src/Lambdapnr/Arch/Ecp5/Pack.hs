@@ -1086,8 +1086,8 @@ packDram pk =
                 pk14 = pk13{pkPacked = pkPacked pk13 ++ [cellName ci]}
              in pk14
       where
-        addChild2 root rootCell c p =
-            p{pkDesign = setCellChildren root (cellConstrChildren rootCell ++ [c]) (pkDesign p)}
+        addChild2 root _ c p =
+            p{pkDesign = setCellChildren root (cellConstrChildren (cellOf p root) ++ [c]) (pkDesign p)}
         tId pk s = fromMaybe emptyId (M.lookup s (tdConstIdByName (ecp5TimingDb (pkE pk))))
 
 -- ---------------------------------------------------------------------------

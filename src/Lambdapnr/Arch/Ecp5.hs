@@ -373,10 +373,26 @@ instance Arch Ecp5 where
   getBoundPipNet e p = boundPipNet p (e5Bind e)
 
   -- Delay model ---------------------------------------------------------
-  predictDelay e srcB _srcPin dstB _dstPin =
-    let (Loc sx sy _) = getBelLocation e srcB
-        (Loc dx dy _) = getBelLocation e dstB
-     in delayFormula e (abs (dx - sx)) (abs (dy - sy))
+  predictDelay e srcB srcPin dstB dstPin =
+    let (Loc sx sy sz) = getBelLocation e srcB
+        (Loc dx dy dz) = getBelLocation e dstB
+        pin n = M.findWithDefault emptyId n (e5ConstIdByName e)
+        fco = pin "FCO"
+        fci = pin "FCI"
+        fxa = pin "FXA"
+        fxb = pin "FXB"
+        f = pin "F"
+        di = pin "DI"
+        q = pin "Q"
+        lutPins = [pin "A", pin "B", pin "C", pin "D"]
+        -- C++ arch.cc predictDelay: direct interconnect (0-delay) cases.
+        directCarry = (srcPin == fco && dstPin == fci) || dstPin `elem` [fxa, fxb] || (srcPin == f && dstPin == di)
+        sameTile = sx == dx && sy == dy
+        qToLut = sameTile && dstPin `elem` lutPins && srcPin == q && (dz `div` 4) == (sz `div` 4)
+        fToLut = sameTile && dstPin `elem` lutPins && srcPin == f && (sz `div` 4) `notElem` [1, 6]
+     in if directCarry || qToLut || fToLut
+            then 0
+            else delayFormula e (abs (dx - sx)) (abs (dy - sy))
   estimateDelay e srcW dstW =
     let (sx, sy) = estLocation e srcW
         (dx, dy) = estLocation e dstW
