@@ -7,10 +7,12 @@ rioctrl reference design, pass by pass.
 ## Reference setup (oracles)
 
 - **Source of truth for semantics**: pinned nextpnr submodule (51e703d0) + trellis store.
-- **Source of truth for numbers**: the **nextpnr-0.10 nix binary**
-  (`/nix/store/zhalr5ayq69gq0bia0nj53pdnadxz86f-nextpnr-ecp5`) and a
-  git worktree at tag `nextpnr-0.10` (**`/devel/HDL/npnr-oracle`** — persistent,
-  NOT /tmp; HEAD 84856bd6), patched with:
+- **Source of truth for numbers**: the **nextpnr-0.10-tag oracle worktree** at
+  `nextpnr-0.10` (HEAD 84856bd6), rebuilt in **`/devel/HDL/lambdapnr/oracle-build/`**
+  (a copy — the original `/devel/HDL/npnr-oracle` tree went READ-ONLY after a machine
+  reboot that remounted all filesystems `errors=remount-ro`; only the workspace is
+  writable). The nix-store binary referenced by older notes
+  (`/nix/store/zhalr5ayq…-nextpnr-ecp5`) no longer exists in the store. Patched with:
   - `LPCHK <pass>:` checksum logs after every pack pass
   - `LPDBG intern` id-table trace (interner order oracle; logs indices >= 1970)
   - `LPDBG cell/net/cellport/cellattr/cellparam` state dumps to
@@ -28,38 +30,63 @@ rioctrl reference design, pass by pass.
     `/tmp/cpp_flags.txt`/`/tmp/cpp_valid.txt` (tile 24,24 via
     `ecp5/arch_place.cc` `isBelLocationValid` probes). See the
     "Placer (heap) — main-loop state" section for the full inventory.
-  - Rebuild: `cd /devel/HDL/npnr-oracle && cmake --build build -j8`; configure:
-    `cmake .. -DARCH=ecp5 -DTRELLIS_INSTALL_PREFIX=/nix/store/4vnsrfw7x6i09k6hmfp0qndlq0bdj7r0-trellis-unstable-2025-01-30
+  - **placer1 SA-refine dumps** in `common/place/placer1.cc`:
+    `/tmp/cpp_p1_tot.txt`, `/tmp/cpp_p1_iter.txt` (IT lines incl. rngstate hex),
+    `/tmp/cpp_p1_moves.txt`, `/tmp/cpp_p1_move_dump.txt`, `/tmp/cpp_p1_rbfc.txt`,
+    `/tmp/cpp_p1_auto.txt`, `/tmp/cpp_p1_chain.txt`, `/tmp/cpp_p1_other.txt`,
+    `/tmp/cpp_p1_chain_move.txt`, `/tmp/cpp_p1_plac17.txt`, `/tmp/cpp_crit17.txt`; plus a
+    `timing.h` dump extension. All additive-only — every rebuild+run still prints
+    `Checksum: 0xf1975059` (lineage A post-place).
+  - **Post-heap / post-place state + per-entity checksum dumps**:
+    `/tmp/cpp_postheap_state.txt` (placer_heap.cc, before placer1 handoff),
+    `/tmp/cpp_postplace_state.txt` + `/tmp/cpp_postplace_ck.txt` (placer1_refine,
+    after `place(true)` — `C <nameidx> <cksum>` / `N <nameidx> <cksum>` lines),
+    `/tmp/cpp_p1_netbounds.txt` (per-net IGNORED/KEPT flags), and
+    `/tmp/cpp_idtail_pack.txt` (id-table tail 43940.. at pack end).
+  - Rebuild: `cd /devel/HDL/lambdapnr/oracle-build/build && cmake --build . -j8`;
+    configure: `cmake . -DARCH=ecp5 -DTRELLIS_INSTALL_PREFIX=/nix/store/4vnsrfw7x6i09k6hmfp0qndlq0bdj7r0-trellis-unstable-2025-01-30
     -DBUILD_GUI=OFF -DBUILD_PYTHON=OFF -DBOOST_ROOT=/devel/HDL/boost191
     -DBOOST_LIBRARYDIR=/devel/HDL/boost191 -DBOOST_INCLUDEDIR=/usr/include`.
   - Run instrumented binary with `LD_LIBRARY_PATH=/devel/HDL/boost191`
     (symlinks to `/usr/lib/libboost_*.so.1.91.0`). Oracle run (~30s):
-    `./build/nextpnr-ecp5 --json test/ecp5/rioctrl/reference/rioctrl_controller.json
+    `./oracle-build/build/nextpnr-ecp5 --json test/ecp5/rioctrl/reference/rioctrl_controller.json
     --textcfg /tmp/cpp_full.config --12k --package CABGA256 --speed 6 --seed 1
-    > /tmp/cpp_full_nolpf.log 2>&1` (no `--lpf` = lineage A anchors).
+    > debug-oracle/cpp_full_nolpf.log 2>&1` (no `--lpf` = lineage A anchors).
+  - `/tmp` is wiped on reboot — copy dumps into `debug-oracle/`/`debug-hs/`
+    (gitignored) immediately after each run; the workspace is the only
+    reboot-persistent location on this box.
 - **Two oracle lineages** (same binary; the difference is `--lpf`):
-  - **Lineage A = run WITHOUT `--lpf`** — the historical checksum table
-    (after-load 0x1ccd3d41 … ffs 0x19206350 … globals 0xfef78839). lambdapnr
-    currently matches this lineage 100% (checksums AND iteration order).
+  - **Lineage A = run WITHOUT `--lpf`** — the current-oracle table (after-load
+    0x14bc76b5 … ffs 0xe4e9248d … globals/fixup 0xa0768a93; post-place 0xf1975059;
+    post-route 0x94a9ffe1). lambdapnr matches every pass + post-place (0 per-entity
+    diffs). The older 0x1ccd3d41/0x19206350/0xfef78839 values were from the old
+    /tmp-era binary and are stale.
   - **Lineage B = run WITH `--lpf` (the reference build command)** — release-equivalent:
     its final `.config` matches `test/ecp5/rioctrl/reference/rioctrl_controller.textcfg`
-    byte-for-byte. Targets: after-load 0x8bc4fbe8, io 0xd1db7350, iologic 0x3e257fd2,
-    ffs 0xcb9d5b45, constraints 0xcb9d5b45, **globals/final 0xc76929e2** (= the golden
-    in REFERENCE.md). lambdapnr state differs from lineage B's ffs state by exactly
-    2 attributes (`clk25$tr_io` BEL + LOC) — i.e. only the unported LPF path differs.
+    byte-for-byte. Current-oracle targets: after-load 0xad3760dd, io 0x89a6cf21,
+    plls 0xe3c91e66, ffs 0x4c2144fe, constraints 0x4c2144fe, **globals/fixup
+    0x889a4909**, post-place 0x519b603f, post-route 0x728f80cc. The old
+    0x8bc4fbe8/0xd1db7350/0xc76929e2 values are the old binary's; REFERENCE.md's
+    golden 0xc76929e2 needs updating at the final gate (the 0.10-tag oracle
+    reproduces the reference textcfg byte-for-byte with 0x889a4909).
 - The submodule (51e703d0) is **newer** than 0.10 and gives different checksums —
   all reference artifacts (textcfg, goldens) are 0.10-era, so pack order/pass set
   mirror **0.10's `Ecp5Packer::pack()`** (io → dqsbuf → plls → iologic → ebr → dsps →
   dcus → misc → constants → dram → carries → luts → lut5xs → ffs → constraints →
   globals; **no pack_eclk**).
-- The C++ oracle holds ONLY the placer dumps now (pack-stage debug patches were
-  dropped when /tmp wiped the old worktree — pack checksums no longer need them).
-  The old full-patch build recipe above was /tmp-era; the current one is the
-  cmake line in the previous bullet.
+- The C++ oracle now holds the placer dumps PLUS the restored pack-stage
+  `LPCHK <pass>:` instrumentation (the pack-stage debug patches had been dropped
+  when /tmp wiped the old worktree; they were re-added this session in
+  `oracle-build/ecp5/pack.cc`, additive-only). The old full-patch build recipe
+  above was /tmp-era; the current one is the cmake line in the previous bullet.
 - Haskell side: `LAMBDAPNR_PACK_STOP=<pass>` stops packing; `LP_DUMP_ORDER=1` dumps
   iteration order to `/tmp/lp_order_<pass>.txt`; `app/Main.hs` stateDump writes the
   C++ LPDBG format (in Map order — NOT iteration order; use LP_DUMP_ORDER for order).
   `/tmp/dump_state.py a b` diffs two state logs (name-based, index-independent).
+  Placer1 debug aids: `LP_P1_DUMP=1` mirrors the placer1.cc dumps to `/tmp/hs_p1_*`,
+  and `LP_PLACER1_SAVE`/`LP_PLACER1_RESUME` provide the `place1Refine` save/resume
+  scaffolding (wired in `app/Main.hs`); `LP_PLACE_SAVE` dumps the post-place
+  cell→bel state and `LP_PLACE_CK` the post-place per-cell/per-net checksums.
 
 ## Milestones (done)
 
@@ -70,43 +97,77 @@ rioctrl reference design, pass by pass.
 | 3 | Binding state, fanout-aware pip delays, cell timing | 8a0ac2b |
 | 4 | All device variants (12k–85k), full CLI option table | a4bb50d |
 | 5 | CLI option semantics + archcheck `--test` | 0c5f22e |
-| 13 | Placer: HeAP main loop (spread/legalise) at bit-exact parity through 20 iterations | 4512822 |
 | 7 | prjtrellis `.config` writer, base configs, bitgen | a742093 |
 | 8 | **Packer: all passes through ffs at parity** (uncommitted) | — |
 | 9 | Packer final: LPF parser, globals, golden pack checksum | 2572185 |
 | 10 | Placer stage 1: constraints + seed placement at parity | c0b4fb0 |
 | 11 | Placer stage 2: equation solve plumbing (Eigen CG FFI) | 82bc84a |
 | 12 | Placer stage 3: timing engine + initial iterations at bit-exact parity | 85cd132 |
-| 13 | Placer: HeAP main loop (spread/legalise) at bit-exact parity through 20 iterations | this commit |
+| 13 | Placer: HeAP main loop (spread/legalise) at bit-exact parity through 20 iterations | 4512822 |
+| 14 | Placer: placer1 SA refine — IT1-23 bit-exact, SA breaks at iter 23 exactly like C++; **post-place checksum at parity** (0xf1975059) after porting `fixupHierarchy` interning + `archInfoToAttributes` | — |
 
-Working tree is dirty: PlacerHeap (main loop + debug dumps), ArchCellInfo (trace
-removals), Main.hs (placeHeapMain wiring), cabal (`-rtsopts`).
+Working tree is dirty: Placer1.hs (**new** — full placer1 SA refine port), PlacerHeap.hs
+(isBelLocValidE/dspLocationValid exports + restore unbind fix), Main.hs (place1Refine +
+LP_PLACER1_SAVE/RESUME save/resume, LP_PLACE_SAVE/LP_PLACE_CK post-place dumps, forces
+the post-place checksum with `seq` before printf, calls `archInfoToAttributes` after the
+pack checksum print), DeterministicRng.hs (rngFromState), Pack.hs (sd0Rename uses
+`renamePort` instead of `movePort`; packFfs' "erase unconnected M" path now
+`swapRemovePort` and updates cellPortOrder; **`fixupHierarchy` now ports the
+trim/rebuild local-name interning (was a no-op)**; **new `archInfoToAttributes`
+(NEXTPNR_BEL/BEL_STRENGTH/ROUTING attrs, interned in C++ order)**), Netlist.hs
+(renameCellPort overwrites instead of appending a duplicate port to cellPortOrder,
+matching C++ `dict operator[]`; restored the `removeNetDriver` export; **new
+`setNetAttr`/`delCellAttr`**), cabal (exposes the Placer1 module),
+ECP5_PORTING_STATUS.md. The placer1 workstream is **un-paused: milestone 14 is done**.
 
 ## Packer checksum status (rioctrl full design, 12k)
+
+> **Oracle regeneration note** — the historical per-pass table below was measured by
+> the old /tmp-era instrumented binary. That binary is gone; the current oracle is the
+> 0.10-tag worktree (84856bd6) rebuilt in `oracle-build/` (the `/devel/HDL/npnr-oracle`
+> tree went read-only after a machine reboot), with the pack-stage `LPCHK <pass>:`
+> instrumentation restored (additive-only). The current oracle gives **different
+> per-pass values** than the old binary (e.g. lineage B globals is now 0x889a4909, not
+> the 0xc76929e2 recorded in REFERENCE.md), but it reproduces
+> `rioctrl_controller.textcfg` **byte-for-byte** — the release-equivalence proof — so
+> the current numbers are the authoritative targets. lambdapnr matches the current
+> oracle on every pass of both lineages.
 
 Lineage B (with `--lpf`, the reference build command) — **lambdapnr matches every
 pass, including the final packing checksum**:
 
 | Pass | C++ (with LPF) | lambdapnr | State |
 | --- | --- | --- | --- |
-| after-load | 0x8bc4fbe8 | ✓ | match |
-| io | 0xd1db7350 | ✓ | match (LPF LOC→BEL) |
-| plls | 0x3e257fd2 | ✓ | match |
-| ebr | 0x7efbd6ce | ✓ | match |
-| dsps | 0x19e431ea | ✓ | match |
-| constants | 0x6d11577f | ✓ | match |
-| dram | 0x0bfe42fb | ✓ | match |
-| carries | 0xe571fedd | ✓ | match |
-| luts | 0xa10cd9a8 | ✓ | match |
-| lut5xs | 0x7e9acc50 | ✓ | match |
-| ffs | 0xcb9d5b45 | ✓ | match |
-| constraints | 0xcb9d5b45 | ✓ | match (checksum-neutral both sides) |
-| **globals** | **0xc76929e2** | ✓ | **match — promote_globals ported** |
-| **fixup/final** | **0xc76929e2** | ✓ | **match = the golden in REFERENCE.md** |
+| after-load | 0xad3760dd | ✓ | match |
+| io | 0x89a6cf21 | ✓ | match (LPF LOC→BEL) |
+| dqsbuf | 0x89a6cf21 | ✓ | match |
+| plls | 0xe3c91e66 | ✓ | match |
+| iologic | 0xe3c91e66 | ✓ | match |
+| ebr | 0xbeb5d69c | ✓ | match |
+| dsps | 0x1cb449a6 | ✓ | match |
+| dcus | 0x1cb449a6 | ✓ | match |
+| misc | 0x1cb449a6 | ✓ | match |
+| constants | 0x6a53a344 | ✓ | match |
+| dram | 0xf41d603f | ✓ | match |
+| carries | 0x5c420e78 | ✓ | match |
+| luts | 0x269431cd | ✓ | match |
+| lut5xs | 0x842a63f5 | ✓ | match |
+| ffs | 0x4c2144fe | ✓ | match |
+| constraints | 0x4c2144fe | ✓ | match (checksum-neutral both sides) |
+| **globals** | **0x889a4909** | ✓ | **match — promote_globals ported** |
+| **fixup/final** | **0x889a4909** | ✓ | **match — fixupHierarchy interning ported** |
 
 - State diff (cells/nets/ports/attrs/params/users/bels) vs C++ at globals: **0 entries**.
 - Cell-dict iteration order byte-identical at every dumped stage.
-- Lineage A (no `--lpf`) also still matches: ffs 0x19206350, globals 0xfef78839.
+- Lineage B post-place checksum **0x519b603f** matches; post-route target 0x728f80cc.
+- The oracle's `--lpf` textcfg is byte-identical to `rioctrl_controller.textcfg`.
+- Lineage A (no `--lpf`) also matches every pass against the current oracle:
+  after-load 0x14bc76b5, io 0x95057499, plls 0xab7b548b, ebr 0xd3512f99,
+  dsps 0x37eec60a, constants 0x8d7a6160, dram 0xcf09d165, carries 0xe21df31b,
+  luts 0x07b3ab60, lut5xs 0x102b6954, ffs 0xe4e9248d, globals/fixup 0xa0768a93.
+- Note: the old 0xc76929e2 golden in REFERENCE.md came from the old binary; the
+  current 0.10-tag oracle reproduces the reference textcfg byte-for-byte with
+  post-pack 0x889a4909, so REFERENCE.md should be updated at the final gate.
 
 ## Component status matrix
 
@@ -130,7 +191,8 @@ pass, including the final packing checksum**:
 | pack_io LOC→BEL | Pack.hs | ✓ `finish` copies attrs, resolves LOC→BEL via `getPackagePinBel` |
 | generate_constraints | Pack.hs | ✓ ported; checksum-neutral; state covered by the globals diff (0 entries) |
 | promote_globals | Pack.hs | ✓ get_clocks + insert_dcc + place_dcc_dcs + DCC metrics + has_short_route; DCCA placement matches C++ (LDCC3/TDCC0) |
-| fixup_hierarchy | Pack.hs | ✓ no-op (C++ final checksum == globals on rioctrl — verified) |
+| fixup_hierarchy | Pack.hs | ✓ ported: trim_hierarchy + rebuild_hierarchy local-name interning with `$N` uniquification (the intern sequence between globals and BEL_STRENGTH — previously a no-op) |
+| archInfoToAttributes | Pack.hs | ✓ NEXTPNR_BEL/BEL_STRENGTH on placed cells (BEL erased) + ROUTING="" on every net; BEL_STRENGTH interned in C++ order (after the first bel-cell's bel-name interns) |
 | Bitgen cell writers (IO/DCC/PLL/DSP/DCU) | Bitgen.hs, DcuBitstream.hs | not started |
 | Base configs | BaseConfigs.hs | ✓ |
 | `.config` writer | Config.hs, Bitgen.hs | ✓ validated via ecppack on earlier milestone |
@@ -140,7 +202,7 @@ pass, including the final packing checksum**:
 | Placer: HeAP main loop | PlacerHeap.hs `placeHeapMain` | ✓ bit-exact: all 20 iterations solved/spread/legal match C++ (iter5 9218/51467/55015, iter20 21832/40337/45044), stall at 20, restore completes |
 | Placer: CutSpreader | PlacerHeap.hs `cutSpread` | ✓ bit-exact: findRegions/expand/cut region inventory + cut sequences match C++; growD overuse guard fixed (top-edge region +y grow) |
 | Placer: StrictLegaliser | PlacerHeap.hs `strictLegalise` | ✓ bit-exact: legal anchors match C++ (iter5 55015, iter20 45044) |
-| Placer: placer1 SA refine | — | not started (needed for post-place 0x987ddeaf) |
+| Placer: placer1 SA refine | Placer1.hs `place1Refine` | ✓ engine ported; initial cost (wirelen 43706, timing 392.00073554665477), move counters (MV1 nmove 29548 / naccept 2823), and IT1-23 dumps bit-exact (SA breaks at iter 23 exactly like C++); **post-place checksum matches (0xf1975059, lineage A; 0x519b603f, lineage B); per-cell/per-net checksum dumps 0 diffs (15620 entities)** |
 | Router (router1) | — | not started |
 | Tests | test/ (85 tests) | ✓ 85/85 passing (stale constructors in 5 test files fixed this session) |
 
@@ -185,6 +247,63 @@ Also verified (no change needed): erase order in flush is `reverse pkPacked`
 (`packed_cells` is a nextpnr `pool` — iterates in REVERSE insertion order, like
 `dict`), and `deleteCellSwap` reproduces the C++ move-back-into-hole exactly.
 
+### Key bugs fixed this session (placer1, uncommitted)
+
+1. **Heap-placer restore bind-desync** — best-solution restore unbound each cell from
+   its SAVED bel instead of its CURRENT bel, leaving stale `bsBel2Cell` inverse-map
+   entries invisible to the checksum (PlacerHeap.hs restore; post-heap checksum
+   unchanged `0x7b602790`). See the "Placer (heap) — main-loop state" note.
+2. **placer1 sweep double-counted move counters** — the chain fold started from the
+   autoplaced accumulators, so nmove/naccept were inflated. Now seeded from 0.
+3. **clusterPlacement1 abs-z coercion** — now fails like C++ (throws) instead of
+   silently falling back to `rootBel`.
+4. **delayNS float-vs-double promotion** — mixed float/double arithmetic promoted
+   differently than C++; aligned the types.
+5. **totalTimingCost running-accumulation order** — added in C++ running order with
+   no per-net `0.0`-seeded sub-sums, matching the bit-exact timing total.
+6. **goIter st3 update dropped `ssNetArc = arcMap'`** (Placer1.hs) — the committed
+   per-arc timing costs went stale after each iteration's timing analysis; the
+   iteration carried forward the previous arcMap, causing the IT3+ divergence.
+7. **iter-17 move flip = 1-ulp timing_delta from changed_arcs summation ORDER** — traced
+   to port-list ordering bugs: `Kernel/Netlist.hs renameCellPort` APPENDED a duplicate
+   port to cellPortOrder instead of overwriting it (C++ `dict operator[]`);
+   `Pack.hs sd0Rename` used `movePort` instead of `renamePort`; and packFfs' "erase
+   unconnected M" path skipped updating cellPortOrder (now `swapRemovePort`).
+   Netlist.hs also restored the `removeNetDriver` export. `app/Main.hs` forces the
+   post-place checksum with `seq` before printf (lazy stderr interleaving). With the
+   ordering fixed, SA is bit-exact through IT23 and breaks at iter 23 exactly like C++.
+8. **Post-place checksum mismatch (0xce8dfae7 vs 0xf1975059) — the SA was NOT the
+   culprit.** The placement/bel/strength state was identical post-place (6443 cells,
+   0 diffs); the divergence was checksum-visible state written by the **pack tail**,
+   which the Haskell never ported:
+   - **`Context::fixupHierarchy` is NOT a no-op** — `rebuild_hierarchy` walks
+     `ctx->cells` in dict order and interns each pack-created cell's *local name*
+     (substring after the last `.`, with `$N` uniquification against the hierarchy's
+     `leaf_cells`). That's ~430 interns between the globals-pass ids and
+     `BEL_STRENGTH`, so skipping them shifted every later id (attr keys are
+     checksum-visible). Ported in Pack.hs (`fixupHierarchy` with the pre-pack
+     imported-name set).
+   - **`BaseCtx::archInfoToAttributes` was missing entirely** — at the end of
+     `Arch::pack()` (pack.cc:3038, AFTER the checksum print) it erases `BEL`, sets
+     `NEXTPNR_BEL` (bel name string) + `BEL_STRENGTH` (32-bit int property) on every
+     cell that has a bel at pack end (the 2 DCC cells), and sets `ROUTING=""` on
+     every net. Missing these attrs changed 9177 net checksums + 2 cell checksums.
+     Ported in Pack.hs; Main.hs calls it after the pack checksum print.
+   - **`BEL_STRENGTH` intern order** — C++ interns it per bel-cell AFTER that cell's
+     `getBelName` interns (names-then-BEL_STRENGTH, then the next bel-cell's names),
+     so the first DCC's `TDCC0` precedes it and the second's `LDCC3` follows
+     (…45470 TDCC0, 45471 BEL_STRENGTH, 45472 LDCC3). The Haskell interned it up
+     front. Now forced with `evaluate (T.length nm)` before the intern.
+   - **`<<loop>>` in the new fixupHierarchy internLocal** — the candidate text was a
+     lazy thunk containing an `idToText` read of the same IORef, forced inside
+     `intern`'s `atomicModifyIORef'` (the internT trap, re-entrant interner →
+     blackhole). Fixed by `T.length t `seq`` before interning.
+   - Verified: per-cell/per-net checksum dumps at post-place, 15620 entities,
+     **0 diffs** on both lineages; lineage A post-place 0xf1975059, lineage B
+     0x519b603f; pack per-pass LPCHK matches the re-instrumented 0.10-tag oracle on
+     every pass of both lineages; oracle `--lpf` textcfg still byte-identical to the
+     reference.
+
 ## Known traps (recurring)
 
 - **Stale cabal artifacts** — "Up to date" lies; always verify `.o`/binary mtime
@@ -208,6 +327,13 @@ Also verified (no change needed): erase order in flush is `reverse pkPacked`
   (e.g. two FFs pairing with one comb in pack_ffs).
 - **C++ state dumps overwrite** — every instrumented C++ run rewrites
   `/tmp/cpp_state_*.txt`; note which lineage (with/without `--lpf`) produced them.
+- **Oracle-edit trap** — an edit op in placer1.cc once silently DELETED the
+  following line (`last_timing_cost = curr_timing_cost;`), perturbing the SA
+  checksum. After every oracle-worktree edit, `git diff` the worktree and re-prove
+  the checksum before trusting dumps.
+- **Lazy CSE / NOINLINE dump trap** — a debug-dump binding was
+  common-subexpression-eliminated, giving spurious values. Add `NOINLINE` to dump
+  thunks before trusting them.
 - Memory: test binary `-M2G`, exe `-M4G` (earlier OOM root-caused and fixed).
 
 ## Placer (heap) — main-loop state
@@ -216,7 +342,14 @@ No-LPF anchors (C++ seed 1, rioctrl full): seed 244753, initial iters
 1355/1340/1431/1384 ✓, then 20 main iterations:
 iter1 solved=1267 spread=47324 legal=57436, iter2 solved=3246 spread=47575
 legal=53888, iter3 solved=5308 spread=49515 legal=56845, … then placer1 SA refine.
-Post-place target `0x987ddeaf`, post-route `0xcd1327e7`.
+Post-place target `0xf1975059` (**MATCHED — milestone 14 complete**), post-route
+`0x94a9ffe1`.
+> **Target correction** — the earlier `0x987ddeaf` / `0xcd1327e7` were stale, from the
+> old /tmp-era worktree. The current instrumented oracle prints
+> `Checksum: 0xf1975059` after place (placer_heap → placer1_refine) and `0x94a9ffe1`
+> post-route — re-proved twice, byte-stable across oracle rebuilds. The final
+> post-place mismatch was NOT in the SA: it was the unported pack tail
+> (`fixupHierarchy` interning + `archInfoToAttributes`); see placer1 bug #8.
 
 Current Haskell: **bit-exact through all 20 iterations** — solved/spread/legal
 triplets match C++ (`/tmp/cpp_full_nolpf.preinst.log`) for every iteration,
@@ -263,12 +396,29 @@ had gone stale relative to the current oracle binary, which now byte-matches the
 Haskell spread dump. The preserved authoritative anchor is the iteration table
 in `/tmp/cpp_full_nolpf.preinst.log`.
 
+**Restore bind-desync bug** (found by the placer1 work; uncommitted fix in
+PlacerHeap.hs): the heap-placer best-solution restore unbound each cell from its
+SAVED bel instead of its CURRENT bel, leaving stale `bsBel2Cell` inverse-map entries.
+Those stale entries were invisible to the checksum (post-heap checksum unchanged
+`0x7b602790`), but poisoned the placer1 sweep's bel lookups. Fixed to unbind from the
+current bel.
+
+**placer1 refine cfg facts**: constraintWeight=10, netShareWeight=0,
+minBelsForGridPick=64, timingFanoutThresh=INT_MAX, timing_driven=true,
+crit_exp=8.0f, lambda=0.5f, temp=1e-7f (fixed), diameter=3, 15 sweeps/iter, refine
+break at `n_no_progress>=1`. Placer1's FastBels uses `check_bel_available=FALSE`
+(unlike the heap placer's); `get_constraints_distance` is provably 0 for refine
+moves.
+
 ## Open problems
 
-1. **placer1 (SA refine)** — needed before the post-place checksum
-   `0x987ddeaf` (the ECP5 place() runs placer_heap → placer1_refine).
+1. ~~**placer1 (SA refine)** — post-place checksum mismatch~~ **RESOLVED**: the
+   divergence was in the pack tail (`fixupHierarchy` local-name interning +
+   `archInfoToAttributes` attrs), not in the SA. Post-place checksums now match on
+   both lineages (0xf1975059 / 0x519b603f) with 0 per-entity diffs.
 2. **Router (router1)** — global clock routing (route_globals) + general
-   BFS ripup-retry; wire/pip binding; post-route `0xcd1327e7`.
+   BFS ripup-retry; wire/pip binding; post-route 0x94a9ffe1 (lineage A) /
+   0x728f80cc (lineage B).
 3. **Packed `.config` comparison** — with placement/routing in place, the
    textcfg should match `rioctrl_controller.textcfg` byte-for-byte; the
    pack-stage config currently differs only in the placement/routing section.
@@ -277,5 +427,8 @@ in `/tmp/cpp_full_nolpf.preinst.log`.
    (`lambdapnrDebugDump`), and the placer dumps (_dbgCut/_dbgPiv/_dbgBc/
    _dbgAU/_dbgCols/_dbgBin, sorted20, spread-dump write, `LPDBG main done`);
    keep LPCHK/LPDBG until the final gate.
+5. Update REFERENCE.md's golden pack checksum (0xc76929e2 is the old binary's
+   value; the current 0.10-tag oracle reproduces the reference textcfg
+   byte-for-byte with post-pack 0x889a4909).
 5. Timing report: Fmax (reference: crg_clkout 69.73/85.62 MHz) — engine is
    ported; the report format remains.

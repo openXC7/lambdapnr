@@ -38,6 +38,8 @@ module Lambdapnr.Kernel.Netlist (
     setCellParam,
     delCellParam,
     setCellAttr,
+    delCellAttr,
+    setNetAttr,
     renameCellPort,
     moveCellPort,
     connectCellPorts,
@@ -49,6 +51,7 @@ module Lambdapnr.Kernel.Netlist (
     setNetUserIdx,
     removeNetUser,
     removeNetDriver,
+    swapRemovePort,
     setTopPort,
     getTopPortNet,
     setCellConstr,
@@ -432,6 +435,20 @@ setCellAttr cell key value d =
         Nothing -> d
         Just ci -> d{designCells = M.insert cell (ci{cellAttrs = M.insert key value (cellAttrs ci)}) (designCells d)}
 
+-- | @ci->attrs.erase(key)@.
+delCellAttr :: IdString -> IdString -> Design bel wire pip -> Design bel wire pip
+delCellAttr cell key d =
+    case M.lookup cell (designCells d) of
+        Nothing -> d
+        Just ci -> d{designCells = M.insert cell (ci{cellAttrs = M.delete key (cellAttrs ci)}) (designCells d)}
+
+-- | @ni->attrs[key] = value@ (mirrors the C++ @dict operator[]@ insert-or-overwrite).
+setNetAttr :: IdString -> IdString -> Property -> Design bel wire pip -> Design bel wire pip
+setNetAttr net key value d =
+    case M.lookup net (designNets d) of
+        Nothing -> d
+        Just ni -> d{designNets = M.insert net (ni{netAttrs = M.insert key value (netAttrs ni)}) (designNets d)}
+
 -- | @dict@-erase order update: the back entry moves into the erased slot.
 swapRemovePort :: (Eq a) => a -> [a] -> [a]
 swapRemovePort _ [] = []
@@ -452,7 +469,7 @@ renameCellPort cell old new d =
                 Nothing -> d
                 Just pi ->
                     let ci1 = ci{cellPorts = M.delete old (cellPorts ci), cellPortOrder = swapRemovePort old (cellPortOrder ci)}
-                        ci2 = ci1{cellPorts = M.insert new (pi{portName = new}) (cellPorts ci1), cellPortOrder = cellPortOrder ci1 ++ [new]}
+                        ci2 = ci1{cellPorts = M.insert new (pi{portName = new}) (cellPorts ci1), cellPortOrder = if new `elem` cellPortOrder ci1 then cellPortOrder ci1 else cellPortOrder ci1 ++ [new]}
                         d1 = d{designCells = M.insert cell ci2 (designCells d)}
                      in case portNet pi of
                             Nothing -> d1

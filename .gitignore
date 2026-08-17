@@ -10,3 +10,9 @@ src/**/*.o
 
 # heap profiles
 *.hp
+
+# ECP5 porting debug artifacts (oracle worktree copy + run dumps)
+oracle-build/
+debug-hs/
+debug-oracle/
+debug-work/

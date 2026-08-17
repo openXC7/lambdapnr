@@ -22,6 +22,7 @@ module Lambdapnr.Arch.Ecp5.Pack (
     packDesign,
     designOf,
     printLogicUsage,
+    archInfoToAttributes,
 ) where
 
 import Control.Monad (foldM, when)
@@ -2602,11 +2603,105 @@ hasShortRoute e src dst thresh = go S.empty [(src, 0)]
                 | otherwise -> go seen rest
 
 -- ---------------------------------------------------------------------------
--- fixupHierarchy (no-op: our design is already flattened)
+-- fixupHierarchy (context.cc:418-487)
 -- ---------------------------------------------------------------------------
 
-fixupHierarchy :: Packer -> Packer
-fixupHierarchy pk = pk
+-- | @Context::fixupHierarchy@: trim the hierarchy maps and rebuild them for
+-- the cells that remain in the design. The design is flattened (single top
+-- module), so only the top's @HierarchicalCell@ exists; its
+-- @leaf_cells_by_gname@ is keyed by the imported (JSON) cell names.
+--
+-- The observable side effect — and the reason this is NOT a no-op — is the
+-- interning: @rebuild_hierarchy@ walks @ctx->cells@ in dict order and calls
+-- @construct_local_name@ for every cell not already known, interning the
+-- cell's local name (the part after the last @.@) with @$N@ uniquification
+-- against the hierarchy's @leaf_cells@ keys. Those interns sit between the
+-- globals-pass ids and @BEL_STRENGTH@ in the intern table, so skipping them
+-- shifts every later id (checksum-visible attr keys included).
+fixupHierarchy :: S.Set IdString -> Packer -> IO Packer
+fixupHierarchy imported pk = do
+    let tbl = ecp5IdTable (pkE pk)
+        d = pkDesign pk
+        -- trim_hierarchy(top): drop leaf entries whose global name is no
+        -- longer a design cell (packed cells were erased at flush)
+        surviving = S.fromList [cellName ci | ci <- cellsIter d, S.member (cellName ci) imported]
+        -- top-module hierarchy: local name id -> global name. Flattened
+        -- design: both are the full JSON name. trim first (only surviving
+        -- imported cells), then rebuild appends the created cells.
+        leafCells0 = M.fromList [(n, n) | n <- S.toList surviving]
+        byGname0 = M.fromList [(n, n) | n <- S.toList surviving]
+    (_lc, _bg) <- foldM (step tbl) (leafCells0, byGname0) (cellsIter d)
+    pure pk
+  where
+    step tbl (lc, bg) ci
+        | M.member (cellName ci) bg = pure (lc, bg)
+        | otherwise = do
+            local <- internLocal tbl lc (cellName ci)
+            pure (M.insert local (cellName ci) lc, M.insert (cellName ci) local bg)
+    -- construct_local_name(hc, global_name, is_cell=true). The candidate
+    -- text must be fully forced BEFORE interning: it contains an idToText
+    -- read of the same IORef, which must not run inside intern's
+    -- atomicModifyIORef' (the internT trap).
+    internLocal tbl lc gname = go 0
+      where
+        full = T.unpack (idToText tbl gname)
+        dp = case break (== '.') (reverse full) of
+            (_, []) -> -1 -- no dot
+            (rev, _) -> length full - length rev - 1
+        base = if dp == -1 then full else drop (dp + 1) full
+        go adder =
+            let t = T.pack (if adder == 0 then base else base ++ "$" ++ show adder)
+             in T.length t `seq` do
+                    n <- intern tbl t
+                    if M.member n lc then go (adder + 1) else pure n
+
+-- ---------------------------------------------------------------------------
+-- archInfoToAttributes (basectx.cc:182)
+-- ---------------------------------------------------------------------------
+
+-- | @BaseCtx::archInfoToAttributes@, called at the end of @Arch::pack()@
+-- (pack.cc:3038, AFTER the pack checksum print) and again at the end of
+-- @place()@/@route()@. Writes the arch state back into the design
+-- attributes: @NEXTPNR_BEL@ + @BEL_STRENGTH@ on every placed cell (erasing
+-- @BEL@ first) and a @ROUTING@ string on every net (empty here — no wires
+-- bound yet). Interning @BEL_STRENGTH@ here is part of the intern-order
+-- contract (it is the last id the C++ interns before the placer).
+archInfoToAttributes :: Ecp5 -> Design BelId WireId PipId -> IO (Design BelId WireId PipId)
+archInfoToAttributes e d0 = do
+    let tbl = ecp5IdTable e
+        -- "BEL" is a constid (chipdb id table); the others are regular
+        -- ids. NEXTPNR_BEL/ROUTING were interned by the JSON frontend's
+        -- load-time find calls; BEL_STRENGTH is interned HERE, at the end
+        -- of pack — after the first bel-cell's bel-name interns, matching
+        -- the C++ loop body order (getBelName runs before the
+        -- BEL_STRENGTH assignment).
+        belId = fromMaybe emptyId (M.lookup "BEL" (tdConstIdByName (ecp5TimingDb e)))
+    nexpnrBelId <- intern tbl "NEXTPNR_BEL"
+    routingId <- intern tbl "ROUTING"
+    (d1, _) <- foldM (stepCell belId nexpnrBelId) (d0, Nothing) (cellsIter d0)
+    let stepNet d ni = setNetAttr (netName ni) routingId (PropStr "") d
+        d2 = foldl' stepNet d1 (netsIter d1)
+    pure d2
+  where
+    belNameOf b =
+        let ns = getBelName e b
+            forced = foldl' (flip seq) () ns
+         in forced `seq` T.intercalate "/" (map (idToText (ecp5IdTable e)) ns)
+    stepCell belId nexpnrBelId (d, bsidM) ci = case cellBel ci of
+        Nothing -> pure (d, bsidM)
+        Just bel -> do
+            let d1 = delCellAttr (cellName ci) belId d
+                nm = belNameOf bel
+            -- force the bel-name string in IO BEFORE interning BEL_STRENGTH:
+            -- it interns the bel-name ids on demand (the internT trap), and
+            -- the C++ interning order is names-then-BEL_STRENGTH.
+            _ <- evaluate (T.length nm)
+            let d2 = setCellAttr (cellName ci) nexpnrBelId (PropStr nm) d1
+            bsid <- case bsidM of
+                Just i -> pure i
+                Nothing -> intern (ecp5IdTable e) "BEL_STRENGTH"
+            let d3 = setCellAttr (cellName ci) bsid (propFromInt (fromIntegral (fromEnum (cellBelStrength ci))) 32) d2
+            pure (d3, Just bsid)
 
 -- ---------------------------------------------------------------------------
 -- The main pack() mirror
@@ -2677,12 +2772,16 @@ packDesign e d verbose settings = do
     dumpOrd "lut5xs" pk27
     let pk28 = packFfs pk27
         pk29 = pkCk "ffs" pk28
-        pk30 = generateConstraints pk29
+    dumpOrd "ffs" pk29
+    let pk30 = generateConstraints pk29
         pk31 = pkCk "constraints" pk30
-        pk32 = promoteGlobals pk31
+    dumpOrd "constraints" pk31
+    let pk32 = promoteGlobals pk31
         pk33 = pkCk "globals" pk32
-        pk34 = fixupHierarchy pk33
-        pk35 = pkCk "fixup" pk34
+        imported = S.fromList (map cellName (cellsIter d))
+    dumpOrd "globals" pk33
+    pk34 <- fixupHierarchy imported pk33
+    let pk35 = pkCk "fixup" pk34
     let pkRes =
             case stop of
                 Just "io" -> pk3
@@ -2868,7 +2967,7 @@ packFfs pk =
      in dumpDone `seq` pk'
   where
     ffZ = belFfZ - belCombZ
-    sd0Rename p ci = setP (cellName ci) (cid p "SD") (PropStr "0") (movePort p (cellName ci) (cid p "DI") (cellName ci) (cid p "M"))
+    sd0Rename p ci = setP (cellName ci) (cid p "SD") (PropStr "0") p{pkDesign = renameCellPort (cellName ci) (cid p "DI") (cid p "M") (pkDesign p)}
     packOne (pAcc, pairs) ci
         | isFf pAcc ci =
             let di = getPort ci (cid pAcc "DI")
@@ -2877,7 +2976,7 @@ packFfs pk =
                     && (m == Nothing || prCell (netDriver (netOf pAcc (fromMaybe (error "m") m))) == Nothing)
                     then
                         let p1 = pAcc{pkDesign = disconnectPort (cellName ci) (cid pAcc "M") (pkDesign pAcc)}
-                         in p1{pkDesign = addCell (cellName ci) (cellOf p1 (cellName ci)){cellPorts = M.delete (cid pAcc "M") (cellPorts (cellOf p1 (cellName ci)))} (pkDesign p1)}
+                         in p1{pkDesign = addCell (cellName ci) (cellOf p1 (cellName ci)){cellPorts = M.delete (cid pAcc "M") (cellPorts (cellOf p1 (cellName ci))), cellPortOrder = swapRemovePort (cid pAcc "M") (cellPortOrder (cellOf p1 (cellName ci)))} (pkDesign p1)}
                     else pAcc)
              in case di of
                     Just diNet ->

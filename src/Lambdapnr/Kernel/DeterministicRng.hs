@@ -14,6 +14,7 @@ module Lambdapnr.Kernel.DeterministicRng (
     Rng,
     rngState,
     newRng,
+    rngFromState,
     rngSeed,
     rng64,
     rng30,
@@ -39,6 +40,11 @@ defaultSeed = 0x3141592653589793
 -- | A fresh RNG at the default seed (matches the C++ constructor).
 newRng :: Rng
 newRng = Rng defaultSeed
+
+-- | Reconstruct an RNG from a raw xorshift64* state word. This mirrors
+-- writing @rngstate@ directly (used by the placer-resume debug path).
+rngFromState :: Word64 -> Rng
+rngFromState = Rng
 
 {- | One xorshift64* step. Returns the output word and the next state.
 

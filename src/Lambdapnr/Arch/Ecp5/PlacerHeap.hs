@@ -12,6 +12,8 @@ module Lambdapnr.Arch.Ecp5.PlacerHeap
   , placeHeapSeed
   , placeHeapInitialIters
   , placeHeapMain
+  , isBelLocValidE
+  , dspLocationValid
   ) where
 
 import qualified Data.Map.Strict as M
@@ -878,13 +880,12 @@ placeHeapMain e cidOf d0 ps0 = do
         -- apply the saved best solution: unbind everything in it, then
         -- rebind with the saved strengths
         restore eA dA psA solnA =
-            let unbindAll acc _ = acc
-                (eU, dU) =
+            let (eU, dU) =
                     foldl'
-                        ( \(eX, dX) (c, mb, _) ->
-                            case mb of
+                        ( \(eX, dX) (c, _mb, _) ->
+                            case M.lookup c (designCells dX) >>= cellBel of
                                 Nothing -> (eX, dX)
-                                Just bel -> let (bs, d') = unbindBel c bel (ecp5Bind eX) dX in (setEcp5Bind bs eX, d')
+                                Just curBel -> let (bs, d') = unbindBel c curBel (ecp5Bind eX) dX in (setEcp5Bind bs eX, d')
                         )
                         (eA, dA)
                         solnA
