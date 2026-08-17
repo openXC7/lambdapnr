@@ -104,7 +104,7 @@ rioctrl reference design, pass by pass.
 | 11 | Placer stage 2: equation solve plumbing (Eigen CG FFI) | 82bc84a |
 | 12 | Placer stage 3: timing engine + initial iterations at bit-exact parity | 85cd132 |
 | 13 | Placer: HeAP main loop (spread/legalise) at bit-exact parity through 20 iterations | 4512822 |
-| 14 | Placer: placer1 SA refine — IT1-23 bit-exact, SA breaks at iter 23 exactly like C++; **post-place checksum at parity** (0xf1975059) after porting `fixupHierarchy` interning + `archInfoToAttributes` | — |
+| 14 | Placer: placer1 SA refine — IT1-23 bit-exact, SA breaks at iter 23 exactly like C++; **post-place checksum at parity** (0xf1975059) after porting `fixupHierarchy` interning + `archInfoToAttributes` | 7ef8b5c |
 
 Working tree is dirty: Placer1.hs (**new** — full placer1 SA refine port), PlacerHeap.hs
 (isBelLocValidE/dspLocationValid exports + restore unbind fix), Main.hs (place1Refine +
