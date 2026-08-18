@@ -106,7 +106,7 @@ rioctrl reference design, pass by pass.
 | 13 | Placer: HeAP main loop (spread/legalise) at bit-exact parity through 20 iterations | 4512822 |
 | 14 | Placer: placer1 SA refine — IT1-23 bit-exact, SA breaks at iter 23 exactly like C++; **post-place checksum at parity** (0xf1975059) after porting `fixupHierarchy` interning + `archInfoToAttributes` | 7ef8b5c |
 | 15 | **Router: `route_ecp5_globals` + router1 A* ripup-retry at bit-exact parity** — post-route checksums match on both lineages (0x94a9ffe1 / 0x728f80cc), 32675-arc pop trace identical, per-net wire dumps 0-diff | fd3a5f5 |
-| 16 | **Bitgen textcfg byte-identical to the oracle on both lineages** — permute_lut/CCU2 fix, JTAGG tile lookup, bram INITVAL/init data, PLL dynamic params, EBR/DSP tile groups, FF LSR/CLK null-net case, base-config entry order | — |
+| 16 | **Bitgen textcfg byte-identical to the oracle on both lineages** — permute_lut/CCU2 fix, JTAGG tile lookup, bram INITVAL/init data, PLL dynamic params, EBR/DSP tile groups, FF LSR/CLK null-net case, base-config entry order | a2a74a2 |
 
 Working tree is dirty: Placer1.hs (**new** — full placer1 SA refine port), PlacerHeap.hs
 (isBelLocValidE/dspLocationValid exports + restore unbind fix), Main.hs (place1Refine +
