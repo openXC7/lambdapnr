@@ -108,6 +108,7 @@ rioctrl reference design, pass by pass.
 | 15 | **Router: `route_ecp5_globals` + router1 A* ripup-retry at bit-exact parity** — post-route checksums match on both lineages (0x94a9ffe1 / 0x728f80cc), 32675-arc pop trace identical, per-net wire dumps 0-diff | fd3a5f5 |
 | 16 | **Bitgen textcfg byte-identical to the oracle on both lineages** — permute_lut/CCU2 fix, JTAGG tile lookup, bram INITVAL/init data, PLL dynamic params, EBR/DSP tile groups, FF LSR/CLK null-net case, base-config entry order | a2a74a2 |
 | 17 | **Timing report at byte parity** — post-pack device-utilisation table, post-place fmax/histogram, post-route critical paths/Fmax/max delays/slack histogram and the `Program finished normally.` tail match the oracle byte-for-byte on both lineages | 26571cd |
+| 18 | **LPF FREQUENCY constraints end-to-end** — `addClock` clkconstr (float `getDelayFromNS` roundtrip), pack `generate_constraints` derived constraints (PLL input/VCO/output math, Property binary-string values, override warnings), clkconstr follows net renames (`nxio_to_tr` `$TRELLIS_IO_IN`) and global promotion (`insert_dcc`), timing-report fmax targets + slack-histogram periods from the constraint — verified byte-identical on a new FREQUENCY lineage | 56e6385 |
 
 Working tree is dirty: Placer1.hs (**new** — full placer1 SA refine port), PlacerHeap.hs
 (isBelLocValidE/dspLocationValid exports + restore unbind fix), Main.hs (place1Refine +
@@ -479,3 +480,35 @@ moves.
    start/endpoint lists appended per iteration pass instead of
    deduplicating like the C++ `pool::insert`); utilisation counts cells
    by TYPE (`getBelBucketForCellType`), not by bel bindings.
+ 6. ~~**LPF FREQUENCY constraints**~~ **RESOLVED (milestone 18)**: the whole
+    clkconstr flow is ported and verified on a new lineage **B′** = the
+    reference run plus `--lpf rioctrl_controller_freq.lpf` (a copy of the
+    reference LPF with `FREQUENCY PORT "clk25" 25 MHz;`). Verified
+    byte-identical against the oracle B′: the load-time
+    `Info: constraining clock net 'clk25' to 25.00 MHz`, the
+    `Generating derived timing constraints...` block (PLL input 25.0 MHz,
+    derived 50.0 MHz for `crg_clkout`, 800.0 MHz for `ecp5pll`), the
+    post-place/post-route fmax targets (50.00 MHz for `$glbnet$crg_clkout`)
+    and both slack histograms. Checksums are unchanged by FREQUENCY
+    (clkconstr is not part of `Context::checksum`): 0x889a4909 /
+    0x519b603f / 0x728f80cc on B′, and the textcfg is byte-identical to
+    the oracle B′ output. Trap list for the port:
+    - `addClock` math is the float `getDelayFromNS(1000/freq)` roundtrip
+      (period = 1e6/freq MHz in ps, low/high = half).
+    - `Property::from_string` treats all-binary strings as NUMERIC: the
+      stored string is reversed (LSB-first) while the int value reads the
+      input MSB-first — PLL params like `"10000"` have string `"00001"`
+      and value 16, and `int_or_default` uses the VALUE.
+    - `generate_constraints`' PLL math is double-typed
+      (`vco_period = period_in * CLKI_DIV / (CLKFB_DIV * <path>_DIV)`,
+      output period = `truncate(vco_period * <out>_DIV)` — truncation at
+      the `simple_clk_contraint` call, not before); a period that
+      truncates to 0 prints `inf` MHz (C printf semantics, not GHC's
+      `Infinity`).
+    - The clkconstr rides the `NetInfo` object: `nxio_to_tr` renames the
+      constrained `clk25` net to `clk25$TRELLIS_IO_IN` (the map key must
+      follow), the trivial IO-tile path swaps the constraint from the B
+      net to the O net, and `insert_dcc` COPIES it onto the new
+      `$glbnet$...` net.
+    - The fmax target override is float division `1000/getDelayNS(period)`;
+      the histogram `clk_period` is a FLOAT holding the constrained period.
