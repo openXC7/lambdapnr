@@ -20,13 +20,10 @@ import qualified Data.Map.Strict as M
 import qualified Data.Foldable as F
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import Control.Monad (forM_, when)
-import Data.List (maximum, sortBy)
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import System.Environment (lookupEnv)
 import System.CPUTime (getCPUTime)
 import System.IO (hPutStrLn, stderr)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
@@ -34,7 +31,6 @@ import System.IO.Unsafe (unsafePerformIO)
 
 import Lambdapnr.Arch.Ecp5
 import Lambdapnr.Arch.Ecp5.Types (BelId, PipId, WireId)
-import Lambdapnr.Kernel.Delay (DelayPair (..), DelayQuad (..))
 import Lambdapnr.Kernel.TimingAnalyser (ArrivReqTime (..), CellArc (..), CellArcType (..), CellPortKey (..), PerDomain (..), PerDomainPair (..), PerPort (..), PortDomainPairData (..), TimingAnalyser (..), buildTimingAnalyser, criticalityOf, runTimingAnalyser)
 import Lambdapnr.Arch.Ecp5.ArchCellInfo (ArchInfo, CombInfo (..), FfInfo (..), assignArchInfo, lookupComb, lookupFf, slicesCompatible)
 import Lambdapnr.Arch.Ecp5.CellTiming (getCellDelayAi, getPortClockingInfoAi, getPortTimingClassAi)
@@ -214,8 +210,7 @@ seedPlacement e cidOf d ps =
             foldl
                 ( \(m, r) t ->
                     let (v, r') = shuffle r (V.fromList (M.findWithDefault [] t m))
-                        dbg = unsafePerformIO (hPutStrLn stderr ("LPDBG shuf " ++ T.unpack (idToText (ecp5IdTable e) t) ++ " " ++ show (V.length v)))
-                     in dbg `seq` (M.insert t (V.toList v) m, r')
+                     in (M.insert t (V.toList v) m, r')
                 )
                 (M.map reverse available0, psRng ps)
                 shuffleOrder
@@ -390,39 +385,11 @@ isBelLocValidE ai e cidOf d bel =
                         | b <- getBelsByTile e (fromIntegral x) (fromIntegral y)
                         , Just c <- [boundBelCell b (ecp5Bind e)]
                         ]
-                    _dbgSlots =
-                        if x == 24 && y == 24
-                            then unsafePerformIO (appendFile "/tmp/hs_slots.txt" (concatMap (\(z, c) -> show z ++ ":" ++ show (unIdString c) ++ ":" ++ show (unIdString (cellType (M.findWithDefault (error "slotc") c (designCells d)))) ++ " ") slots ++ "\n"))
-                            else ()
-                    _dbgFlags =
-                        if x == 24 && y == 24
-                            then
-                                unsafePerformIO
-                                    ( appendFile "/tmp/hs_flags.txt"
-                                        ( concatMap
-                                            ( \(z, c) ->
-                                                let bt = z `mod` 4
-                                                    ci = M.findWithDefault (error "flc") c (designCells d)
-                                                    nm = T.unpack (idToText (ecp5IdTable e) c)
-                                                    clu = unIdString (cellCluster ci)
-                                                 in (if bt == 0
-                                                        then show z ++ "C:" ++ show (unIdString c) ++ ":" ++ nm ++ ":clu" ++ show clu ++ " flags=" ++ show (ciFlags (lookupComb c ai)) ++ " "
-                                                        else
-                                                            if bt == 1
-                                                                then let FfInfo fk clk lsr ce _ = lookupFf c ai in show z ++ "F:" ++ show (unIdString c) ++ ":" ++ nm ++ ":clu" ++ show clu ++ " flags=" ++ show fk ++ " clk=" ++ show (unIdString clk) ++ " lsr=" ++ show (unIdString lsr) ++ " ce=" ++ show (unIdString ce) ++ " "
-                                                                else show z ++ "R ")
-                                            )
-                                            slots
-                                            ++ "\n"
-                                        )
-                                    )
-                            else ()
                     slotCell z = case lookup (fromIntegral z) slots of
                         Just cName -> Just (M.findWithDefault (error "slot cell") cName (designCells d), ai)
                         Nothing -> Nothing
                  in let r = slicesCompatible slotCell
-                        _dbgV = if x == 24 && y == 24 then unsafePerformIO (appendFile "/tmp/hs_valid.txt" ("cell=" ++ maybe "-" (show . unIdString) (boundBelCell bel (ecp5Bind e)) ++ " z=" ++ show (biZ (belAt (ecp5Chipdb e) bel)) ++ ":" ++ (if r then "1" else "0") ++ "\n")) else ()
-                     in r `seq` (_dbgSlots `seq` _dbgFlags `seq` _dbgV `seq` r)
+                     in r
             else
                 case boundBelCell bel (ecp5Bind e) of
                     Nothing -> True
@@ -500,10 +467,6 @@ updateNth i f xs = case splitAt i xs of
     _ -> xs
 -- | The Eigen CG solver (same call as the C++: ConjugateGradient with
 -- tolerance, solveWithGuess).
-{-# NOINLINE cgDumpRef #-}
-cgDumpRef :: IORef Bool
-cgDumpRef = unsafePerformIO (newIORef True)
-
 solveEqSys :: Double -> EqSys -> [Double] -> [Double]
 solveEqSys tol (EqSys cols rhs) guess =
     let colsL = F.toList cols
@@ -511,13 +474,6 @@ solveEqSys tol (EqSys cols rhs) guess =
         colptr = scanl (\acc c -> acc + length c) 0 colsL
         (rows, vals) = unzip [(r, v) | c <- colsL, (r, v) <- c]
      in unsafePerformIO $ do
-            first <- readIORef cgDumpRef
-            writeIORef cgDumpRef False
-            when first $ do
-                want <- lookupEnv "LP_DUMP_CG_INPUT"
-                case want of
-                    Just _ -> writeFile "/tmp/hs_cg_input.txt" (show (colptr, rows, vals, rhsL, guess))
-                    Nothing -> pure ()
             withArray (map fromIntegral colptr) $ \cp ->
                 withArray (map fromIntegral rows) $ \rp ->
                     withArray (map realToFrac vals) $ \vp ->
@@ -586,15 +542,7 @@ buildEquations nm critOf dumpArcs anchorIter d locs solveCells udata yaxis =
                         )
                         es0
                         (zip [0 ..] solveCells)
-        dbg =
-            unsafePerformIO $ do
-                want <- lookupEnv "LP_DUMP_MATRIX"
-                case want of
-                    Just _ -> do
-                        writeFile "/tmp/hs_net_order.txt" (unlines (map (show . unIdString . netName) nets))
-                        hPutStrLn stderr ("LPDBG nets " ++ show (length nets) ++ " passed " ++ show nPass)
-                    Nothing -> pure ()
-     in dbg `seq` es
+     in es
   where
     locOf c = M.findWithDefault (CellLoc 0 0 0 0 0 0 False False) c locs
     cellPos c = let l = locOf c in if yaxis then plcY l else plcX l
@@ -651,14 +599,6 @@ buildEquations nm critOf dumpArcs anchorIter d locs solveCells udata yaxis =
                                         / ( fromIntegral (numUsers ni)
                                                 * max 1 ((if yaxis then 1 else 1) * abs (oPos - thisPos))
                                           )
-                                _arcDbg =
-                                    unsafePerformIO $ do
-                                        want <- lookupEnv "LP_DUMP_ARC"
-                                        case want of
-                                            Just _ ->
-                                                when dumpArcs $
-                                                    hPutStrLn stderr ("LPDBG arc " ++ nm (fst3 other) ++ "." ++ nm (snd3 other) ++ " -> " ++ nm (fst3 p) ++ "." ++ nm (snd3 p) ++ " o=" ++ show (round oPos) ++ " t=" ++ show (round thisPos) ++ " w=" ++ show base ++ " y=" ++ show yaxis)
-                                            Nothing -> pure ()
                                 -- cfg.timingWeight * pow(crit, cfg.criticalityExponent),
                                 -- ECP5: timingWeight = 10, criticalityExponent = 4;
                                 -- user ports only (the C++ checks user_idx)
@@ -667,7 +607,7 @@ buildEquations nm critOf dumpArcs anchorIter d locs solveCells udata yaxis =
                                         then base * (1.0 + realToFrac ((10.0 :: Float) * ((critOf (fst3 p) (snd3 p)) ** (4.0 :: Float))))
                                         else base
 
-                             in _arcDbg `seq` stamp (stamp (stamp (stamp es' p p w) p other (-w)) other other w) other p (-w)
+                             in stamp (stamp (stamp (stamp es' p p w) p other (-w)) other other w) other p (-w)
                 arcEq es' p = processArc (processArc es' p lbp) p ubp
              in (foldl arcEq es ports, n + 1)
     fst3 (c, _, _) = c
@@ -689,18 +629,12 @@ solveAxis d maxX maxY locs solveCells es yaxis =
     let locOf c = M.findWithDefault (CellLoc 0 0 0 0 0 0 False False) c locs
         guess = [fromIntegral (if yaxis then plcY (locOf c) else plcX (locOf c)) | c <- solveCells]
         out = solveEqSys (realToFrac (1e-5 :: Float)) es guess
-        _dbg =
-            unsafePerformIO $ do
-                want <- lookupEnv "LP_DUMP_SOLVE"
-                case want of
-                    Just _ -> hPutStrLn stderr ("LPDBG solve y=" ++ show yaxis ++ " out=" ++ show (take 6 out) ++ " guess=" ++ show (take 6 guess))
-                    Nothing -> pure ()
         go acc (c, v) =
             let l = locOf c
              in if yaxis
                     then M.insert c l{plcRawY = v, plcY = max 0 (min maxY (truncate v))} acc
                     else M.insert c l{plcRawX = v, plcX = max 0 (min maxX (truncate v))} acc
-     in _dbg `seq` foldl go locs (zip solveCells out)
+     in foldl go locs (zip solveCells out)
 
 -- | The 4 initial solve iterations of @place()@ (build + solve each
 -- axis 5 times, then chain-update and report).
@@ -725,22 +659,7 @@ placeHeapInitialIters e cidOf d ps0 = do
                 solveDirection yaxis pAcc =
                     let step (nStep, pAcc') _ =
                             let es = buildEquations (\n -> T.unpack (idToText (ecp5IdTable e) n)) critOf (i == 0 && nStep == 1) 0 d (psLocs pAcc') solveCells udata yaxis
-                                dbg =
-                                    if i == 0 && not yaxis && nStep <= 2
-                                        then
-                                            let ls =
-                                                    [ show r ++ " " ++ show c ++ " " ++ show v
-                                                    | (c, col) <- zip [0 ..] (F.toList (esCols es))
-                                                    , (r, v) <- col
-                                                    ]
-                                                        ++ ["RHS " ++ show r ++ " " ++ show v | (r, v) <- zip [0 ..] (F.toList (esRhs es))]
-                                             in unsafePerformIO $ do
-                                                    want <- lookupEnv "LP_DUMP_MATRIX"
-                                                    case want of
-                                                        Just _ -> writeFile ("/tmp/hs_matrix" ++ show nStep ++ ".txt") (unlines ls)
-                                                        Nothing -> pure ()
-                                        else ()
-                             in dbg `seq` ( nStep + 1
+                             in ( nStep + 1
                                 , pAcc'{psLocs = solveAxis d (psMaxX pAcc') (psMaxY pAcc') (psLocs pAcc') solveCells es yaxis}
                                 )
                      in snd (foldl step (1, pAcc) [1 .. 5])
@@ -929,95 +848,18 @@ placeHeapMain e cidOf d0 ps0 = do
                         else
                             let anchorIt = if iterA == 0 then 0 else iterA
                                 locsS = timePhase "solve" iterA (solveBothAxes anchorIt dA psA solveCells udata tmgA)
-                                _dbgSolve =
-                                    if iterA == 4
-                                        then
-                                            unsafePerformIO $
-                                                writeFile "/tmp/hs_solve_dump.txt" (unlines [T.unpack (idToText (ecp5IdTable eA) c) ++ " " ++ show (plcRawX l) ++ " " ++ show (plcRawY l) | (c, l) <- M.toList locsS])
-                                        else ()
                                 locsS1 = timePhase "chain1" iterA (updateAllChains dA locsS (psPlaceCells psA) (psMaxX psA) (psMaxY psA))
-                                solvedHpwl = _dbgSolve `seq` totalHpwl dA locsS1
+                                solvedHpwl = totalHpwl dA locsS1
                                 locsS2 = timePhase "chain2" iterA (updateAllChains dA locsS1 (psPlaceCells psA) (psMaxX psA) (psMaxY psA))
                                 locsSpr = timePhase "spread" iterA (runSpreaders eA dA fbMap groupPools runTypes solveCells (psPlaceCells psA) chainMap (psMaxX psA) (psMaxY psA) locsS2)
                                 locsSpr1 = timePhase "chain3" iterA (updateAllChains dA locsSpr (psPlaceCells psA) (psMaxX psA) (psMaxY psA))
                                 spreadHpwl = totalHpwl dA locsSpr1
-                                _dbgSp =
-                                    if iterA == 4
-                                        then
-                                            unsafePerformIO $
-                                                writeFile
-                                                    "/tmp/hs_spread_dump.txt"
-                                                    ( unlines
-                                                        [ T.unpack (idToText (ecp5IdTable eA) c) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) ++ " " ++ show (plcRawX l) ++ " " ++ show (plcRawY l)
-                                                        | (c, l) <- M.toList locsSpr1
-                                                        ]
-                                                    )
-                                        else ()
                                 legRes = strictLegalise ai eA cidOf dA fbMap chainMap (psMaxX psA) (psMaxY psA) locsSpr1 solveCells udata timeout (psRng psA)
                                 (eL, dL, locsL0, rngL) = legRes
                                 locsL = timePhase "legalise" iterA locsL0
                                 locsL1 = timePhase "chain4" iterA (updateAllChains dL locsL (psPlaceCells psA) (psMaxX psA) (psMaxY psA))
-                                legalHpwl = _dbgSp `seq` totalHpwl dL locsL1
+                                legalHpwl = totalHpwl dL locsL1
                                 tmgL = timePhase "timing" iterA (runTimingAnalyser eL isGlobalNet True tmgA dL)
-                                _dbgCrit =
-                                    unsafePerformIO $ do
-                                        let cs = [ppWorstCrit pd | pd <- M.elems (taPorts tmgL), ppWorstCrit pd > 0]
-                                            cnt = length cs
-                                            mx = maximum (0 : cs)
-                                            sm = sum (map (\x -> realToFrac x :: Double) cs)
-                                        appendFile "/tmp/hs_crit.txt" (show (iterA + 1) ++ " " ++ show cnt ++ " " ++ show sm ++ " " ++ show mx ++ "\n")
-                                        let big =
-                                                [ ( T.unpack (idToText (ecp5IdTable e) c) ++ "." ++ T.unpack (idToText (ecp5IdTable e) p)
-                                                  , ppWorstCrit pd
-                                                  )
-                                                | (CellPortKey c p, pd) <- M.toList (taPorts tmgL)
-                                                , ppWorstCrit pd > 0.5
-                                                ]
-                                            sorted = sortBy (\(a, _) (b, _) -> compare a b) big
-                                        when (iterA == 1) $ writeFile "/tmp/hs_crit_ports.txt" (unlines [n ++ " " ++ show c | (n, c) <- sorted])
-                                _dbgPort =
-                                    unsafePerformIO $
-                                        if iterA /= 1
-                                            then pure ()
-                                            else do
-                                                let matches =
-                                                        [ (c, p, pd)
-                                                        | (CellPortKey c p, pd) <- M.toList (taPorts tmgL)
-                                                        , T.unpack (idToText (ecp5IdTable e) c) == "$nextpnr_CCU2C_12$CCU2_COMB0"
-                                                        , T.unpack (idToText (ecp5IdTable e) p) == "A"
-                                                        ]
-                                                case matches of
-                                                    [] -> writeFile "/tmp/hs_port_dump.txt" "NOT FOUND\n"
-                                                    ((c, _, pd) : _) -> do
-                                                        let routeLine = "route=" ++ show (dpMin (ppRouteDelay pd)) ++ "/" ++ show (dpMax (ppRouteDelay pd))
-                                                            arrLines = ["arr[" ++ show k ++ "]=" ++ show (dpMin (artValue v)) ++ "/" ++ show (dpMax (artValue v)) | (k, v) <- M.toList (ppArrival pd)]
-                                                            reqLines = ["req[" ++ show k ++ "]=" ++ show (dpMin (artValue v)) ++ "/" ++ show (dpMax (artValue v)) | (k, v) <- M.toList (ppRequired pd)]
-                                                            arcLines = ["arc[" ++ show t ++ "] other=" ++ T.unpack (idToText (ecp5IdTable e) o) ++ " dq=" ++ show (dpMin (dqRise q)) ++ "/" ++ show (dpMax (dqRise q)) ++ "/" ++ show (dpMin (dqFall q)) ++ "/" ++ show (dpMax (dqFall q)) | CellArc t o q _ <- ppArcs pd]
-                                                            dpLines = ["dp[" ++ show k ++ "] slack=" ++ show (pdpSetupSlack v) ++ " crit=" ++ show (pdpCriticality v) | (k, v) <- M.toList (ppDomainPairs pd)]
-                                                            fcoId = fromMaybe emptyId (cidOf "FCO")
-                                                            fcoNets = [ni | (_, ni) <- M.toList (designNets dL), prCell (netDriver ni) == Just c, prPort (netDriver ni) == fcoId]
-                                                            fcoLines = concatMap fcoNetLines fcoNets
-                                                            locStr (Loc x y z) = show x ++ "," ++ show y ++ "," ++ show z
-                                                            fcoNetLines ni =
-                                                                let drvLoc = case prCell (netDriver ni) >>= \dc -> M.lookup dc (designCells dL) >>= cellBel of
-                                                                        Just b -> locStr (getBelLocation e b)
-                                                                        Nothing -> "?"
-                                                                 in ("fco_net=" ++ nm (netName ni) ++ " driver_bel=" ++ drvLoc) : concatMap fcoUserLines [u | Just u <- V.toList (netUsers ni)]
-                                                            fcoUserLines u =
-                                                                let uc = fromMaybe emptyId (prCell u)
-                                                                    up = prPort u
-                                                                    locS = case prCell u >>= \x -> M.lookup x (designCells dL) >>= cellBel of
-                                                                        Just b -> locStr (getBelLocation e b)
-                                                                        Nothing -> "?"
-                                                                    sink = M.lookup (CellPortKey uc up) (taPorts tmgL)
-                                                                    rtLine = case sink of
-                                                                        Just ps -> "    route=" ++ show (dpMin (ppRouteDelay ps)) ++ "/" ++ show (dpMax (ppRouteDelay ps))
-                                                                        Nothing -> "    route=?"
-                                                                    setupLines = case sink of
-                                                                        Just ps -> ["    setup other=" ++ nm o ++ " dq=" ++ show (dpMin (dqRise q)) ++ "/" ++ show (dpMax (dqRise q)) ++ "/" ++ show (dpMin (dqFall q)) ++ "/" ++ show (dpMax (dqFall q)) | CellArc ArcSetup o q _ <- ppArcs ps]
-                                                                        Nothing -> []
-                                                                 in ("  user=" ++ nm uc ++ "." ++ nm up ++ " bel=" ++ locS) : rtLine : setupLines
-                                                        writeFile "/tmp/hs_port_dump.txt" (unlines (routeLine : arrLines ++ reqLines ++ arcLines ++ dpLines ++ fcoLines))
                                 (bestN, stalledN, solnN) =
                                     if legalHpwl < bestA
                                         then (legalHpwl, 0, [(cellName ci, cellBel ci, cellBelStrength ci) | ci <- cellsIter dL])
@@ -1025,7 +867,7 @@ placeHeapMain e cidOf d0 ps0 = do
                                 locsFinal = M.map (\l -> l{plcLegalX = plcX l, plcLegalY = plcY l}) locsL1
                                 psN = psA{psLocs = locsFinal, psRng = rngL}
                              in do
-                                    _dbgCrit `seq` _dbgPort `seq` hPutStrLn stderr ("    at iteration #" ++ show (iterA + 1) ++ ", type ALL: wirelen solved = " ++ show solvedHpwl ++ ", spread = " ++ show spreadHpwl ++ ", legal = " ++ show legalHpwl ++ ".")
+                                    hPutStrLn stderr ("    at iteration #" ++ show (iterA + 1) ++ ", type ALL: wirelen solved = " ++ show solvedHpwl ++ ", spread = " ++ show spreadHpwl ++ ", legal = " ++ show legalHpwl ++ ".")
                                     go (eL, dL, psN, tmgL, bestN, stalledN, iterA + 1, solvedHpwl, legalHpwl, solnN)
     hPutStrLn stderr ("Running main analytical placer, max placement attempts per cell = " ++ show timeout ++ ".")
     go (e, d0, ps0, tmg0, maxBound :: Int, 0, 0, 0, 0, [])
@@ -1131,18 +973,6 @@ cutSpread e d fbMap buckets solveCells placeCells chainMap maxX maxY locs0 =
                                     then (o, bumpTile fo (plcX cl, plcY cl) t, ext')
                                     else (bumpTile o (plcX cl, plcY cl) t, fo, ext')
     (occ, focc, extents) = foldl' stepOcc (M.empty, M.empty, M.empty) (M.toList locs0)
-    _dbgOcc =
-        if nb == 3
-            then
-                unsafePerformIO $
-                    appendFile
-                        "/tmp/hs_occ_dump.txt"
-                        ( unlines
-                            [ show (x, y) ++ " occ=" ++ show [occAt x y t | t <- [0 .. nb - 1]] ++ " focc=" ++ show [fixedAt x y t | t <- [0 .. nb - 1]] ++ " bels=" ++ show [belsAt x y t | t <- [0 .. nb - 1]]
-                            | (x, y) <- [(3, 2), (4, 2), (3, 3), (3, 4), (4, 4)]
-                            ]
-                        )
-            else ()
     -- init(): chain extents -> chaines at each cell's location
     chaines =
         foldl'
@@ -1335,19 +1165,7 @@ cutSpread e d fbMap buckets solveCells placeCells chainMap maxX maxY locs0 =
          in if length sortedCells < 2
                 then (st, locsQ, cellsAtLocQ, Nothing)
                 else
-                    let _dbgTie =
-                            if srId r == 1
-                                then
-                                    let pairs = zip sortedCells (drop 1 sortedCells)
-                                        ties = [rawOf a | (a, b) <- pairs, rawOf a == rawOf b]
-                                        s = "  ntie=" ++ show (length ties) ++ concat [" " ++ T.unpack (idToText (ecp5IdTable e) a) ++ "=" ++ show v | (a, v) <- take 20 (zip [a | (a, b) <- pairs, rawOf a == rawOf b] ties)] ++ "\n"
-                                     in unsafePerformIO (length s `seq` appendFile "/tmp/hs_ties.txt" s)
-                                else ()
-                        totalCells = sum (map chainOf cutCells)
-                        _dbgCut = unsafePerformIO (appendFile "/tmp/hs_regions_log.txt" ("cut r" ++ show (srId r) ++ " (" ++ show (srX0 r) ++ "," ++ show (srY0 r) ++ ")|>(" ++ show (srX1 r) ++ "," ++ show (srY1 r) ++ ") dir=" ++ show dir ++ " ncells=" ++ show (length sortedCells) ++ "\\n"
-                            ++ (if srId r == 1 && length sortedCells > 100
-                                    then "  sorted20:" ++ concat [" " ++ T.unpack (idToText (ecp5IdTable e) c) ++ "=" ++ show (rawOf c) | c <- take 20 sortedCells] ++ "\\n"
-                                    else "")))
+                    let totalCells = sum (map chainOf cutCells)
                         (_, (_, pivot0)) =
                             foldl
                                 ( \(acc, (pc, pi)) c ->
@@ -1358,14 +1176,13 @@ cutSpread e d fbMap buckets solveCells placeCells chainMap maxX maxY locs0 =
                                 )
                                 (0 :: Int, (0 :: Int, 0 :: Int))
                                 sortedCells
-                        pivot = _dbgCut `seq` min pivot0 (length sortedCells - 1)
+                        pivot = min pivot0 (length sortedCells - 1)
                         extentOf c =
                             case M.lookup c extents of
                                 Just (x0, y0, x1, y1) -> if dir then y1 - y0 + 1 else x1 - x0 + 1
                                 Nothing -> 1
                         clearanceL = maximum (0 : [extentOf c | (i, c) <- zip [0 ..] sortedCells, i < pivot])
                         clearanceR = maximum (0 : [extentOf c | (i, c) <- zip [0 ..] sortedCells, i >= pivot])
-                        _dbgPiv = unsafePerformIO (appendFile "/tmp/hs_regions_log.txt" ("  pivot=" ++ show pivot ++ " cl=" ++ show clearanceL ++ " cr=" ++ show clearanceR ++ "\n"))
                         trimmedL0 = if dir then srY0 r else srX0 r
                         trimmedR0 = if dir then srY1 r else srX1 r
                         rowHasBels bnd =
@@ -1375,32 +1192,9 @@ cutSpread e d fbMap buckets solveCells placeCells chainMap maxX maxY locs0 =
                                 )
                                 [(if dir then srX0 r else srY0 r) .. (if dir then srX1 r else srY1 r)]
                         trimmedL = head ([b | b <- [trimmedL0 .. (if dir then srY1 r else srX1 r)], rowHasBels b] ++ [if dir then srY1 r else srX1 r])
-                        _dbgColsF = _dbgCols `seq` ()
                         trimmedR = head ([b | b <- reverse [(if dir then srY0 r else srX0 r) .. trimmedR0], rowHasBels b] ++ [if dir then srY0 r else srX0 r])
-                        _dbgAU i aU lv rv =
-                            if srId r == 0 && nb == 2
-                                then
-                                    unsafePerformIO
-                                        ( appendFile "/tmp/hs_regions_log.txt" ("  au i=" ++ show i ++ " aU=" ++ show aU ++ " lv=" ++ show (lv !! 1) ++ " rv=" ++ show (rv !! 1) ++ " pivot=" ++ show pivot ++ "\n")
-                                        )
-                                else ()
-                        _dbgCols =
-                            if srId r == 0 && nb == 2
-                                then
-                                    unsafePerformIO
-                                        ( appendFile
-                                            "/tmp/hs_regions_log.txt"
-                                            ( "  colbels:"
-                                                ++ concat
-                                                    [ " " ++ show i ++ "=" ++ show (sum [belsAt (if dir then j else i) (if dir then i else j) 1 | j <- [(if dir then srX0 r else srY0 r) .. (if dir then srX1 r else srY1 r)]])
-                                                    | i <- [trimmedL .. trimmedR]
-                                                    ]
-                                                ++ "\n"
-                                            )
-                                        )
-                                else ()
                      in if (trimmedR - trimmedL + 1) <= max clearanceL clearanceR
-                            then _dbgPiv `seq` (st, locsQ, cellsAtLocQ, Nothing)
+                            then (st, locsQ, cellsAtLocQ, Nothing)
                             else
                                 let cellIdx c = typeIdx M.! cellType (cellOf c)
                                     leftCells0 = [sum [chainOf c | (i, c) <- zip [0 ..] sortedCells, i <= pivot, cellIdx c == t] | t <- [0 .. nb - 1]]
@@ -1417,7 +1211,7 @@ cutSpread e d fbMap buckets solveCells placeCells chainMap maxX maxY locs0 =
                                                                     | t <- [0 .. nb - 1]
                                                                     ]
                                                          in if aU < bestDU
-                                                                then _dbgAU i aU lv rv `seq` (i, aU)
+                                                                then (i, aU)
                                                                 else (bestC, bestDU)
                                                     else (bestC, bestDU)
                                             )
@@ -1436,23 +1230,16 @@ cutSpread e d fbMap buckets solveCells placeCells chainMap maxX maxY locs0 =
                                                 )
                                             )
                                  in if bestCut == -1
-                                        then _dbgPiv `seq` (st, locsQ, cellsAtLocQ, Nothing)
+                                        then (st, locsQ, cellsAtLocQ, Nothing)
                                         else
-                                            let _dbgBc = _dbgCols `seq` unsafePerformIO (appendFile "/tmp/hs_regions_log.txt" ("  trimmed=" ++ show trimmedL ++ ".." ++ show trimmedR ++ " bestcut=" ++ show bestCut ++ " pivot'=" ++ show pivot ++ "\n"))
-                                                leftBels = [sum [belsAt x y t | x <- [srX0 r .. (if dir then srX1 r else bestCut)], y <- [srY0 r .. (if dir then bestCut else srY1 r)]] | t <- [0 .. nb - 1]]
+                                            let leftBels = [sum [belsAt x y t | x <- [srX0 r .. (if dir then srX1 r else bestCut)], y <- [srY0 r .. (if dir then bestCut else srY1 r)]] | t <- [0 .. nb - 1]]
                                                 rightBels = [sum [belsAt x y t | x <- [(if dir then srX0 r else bestCut + 1) .. srX1 r], y <- [(if dir then bestCut + 1 else srY0 r) .. srY1 r]] | t <- [0 .. nb - 1]]
                                              in if sum leftBels == 0 || sum rightBels == 0
-                                                    then _dbgBc `seq` (st, locsQ, cellsAtLocQ, Nothing)
+                                                    then (st, locsQ, cellsAtLocQ, Nothing)
                                                     else
                                                         let isOver rSide lc rc =
                                                                 let delta = sum [fromIntegral (lc !! t) / fromIntegral (max (leftBels !! t) 1) - fromIntegral (rc !! t) / fromIntegral (max (rightBels !! t) 1) | t <- [0 .. nb - 1]]
-                                                                    _dbgO =
-                                                                        if srId r == 1
-                                                                            then
-                                                                                let s = "  isOver rSide=" ++ show rSide ++ " delta=" ++ show delta ++ " lc=" ++ show lc ++ " rc=" ++ show rc ++ " lb=" ++ show leftBels ++ " rb=" ++ show rightBels ++ "\n"
-                                                                                 in unsafePerformIO (length s `seq` appendFile "/tmp/hs_isover.txt" s)
-                                                                            else ()
-                                                                 in _dbgO `seq` if rSide then delta < 0 else delta > 0
+                                                                 in if rSide then delta < 0 else delta > 0
                                                             goLeft (piv, lc, rc)
                                                                 | piv > 0 && isOver False lc rc =
                                                                     let sz = chainOf (sortedCells !! piv)
@@ -1484,14 +1271,7 @@ cutSpread e d fbMap buckets solveCells placeCells chainMap maxX maxY locs0 =
                                                                             origLeft = rawOf (sortedCells !! fst bl)
                                                                             origRight = rawOf (sortedCells !! (fst br - 1))
                                                                             m' = (snd br - snd bl) / max 0.00001 (origRight - origLeft)
-                                                                            _dbgBin =
-                                                                                if srId r == 1 && i < 3
-                                                                                    then
-                                                                                        unsafePerformIO
-                                                                                            ( appendFile "/tmp/hs_regions_log.txt" ("  bin " ++ show i ++ " bl=(" ++ show (fst bl) ++ "," ++ show (snd bl) ++ ") br=(" ++ show (fst br) ++ "," ++ show (snd br) ++ ") origL=" ++ show origLeft ++ " origR=" ++ show origRight ++ " m=" ++ show m' ++ " first=" ++ T.unpack (idToText (ecp5IdTable e) (sortedCells !! fst bl)) ++ "\n")
-                                                                                            )
-                                                                                    else ()
-                                                                         in _dbgBin `seq` foldl'
+                                                                         in foldl'
                                                                                 ( \locsB j ->
                                                                                     let posOld = rawOf (sortedCells !! j)
                                                                                         posNew = snd bl + m' * (posOld - origLeft)
@@ -1526,34 +1306,11 @@ cutSpread e d fbMap buckets solveCells placeCells chainMap maxX maxY locs0 =
                                                                             [(x, y) | x <- [srX0 rr .. srX1 rr], y <- [srY0 rr .. srY1 rr]]
                                                                     }
                                                             locsOut = foldl' (\l c -> M.adjust (\lc -> lc{plcX = min (srX1 r) (max (srX0 r) (truncate (plcRawX lc))), plcY = min (srY1 r) (max (srY0 r) (truncate (plcRawY lc)))}) c l) locsCut sortedCells
-                                                         in _dbgExp `seq` _dbgTie `seq` _dbgPiv `seq` _dbgBc `seq` (st', locsOut, cellsAtLoc', Just (rlId, rrId))
+                                                         in (st', locsOut, cellsAtLoc', Just (rlId, rrId))
     stAfterFind =
         let r = findRegions
-            _dbgR = unsafePerformIO $ do
-                appendFile
-                    "/tmp/hs_regions_log.txt"
-                    ( "== spreader run buckets=" ++ show (map unIdString buckets) ++ "\n"
-                        ++ unlines
-                            [ "reg " ++ show (srId reg) ++ " (" ++ show (srX0 reg) ++ "," ++ show (srY0 reg) ++ ")|>(" ++ show (srX1 reg) ++ "," ++ show (srY1 reg) ++ ") cells=" ++ unwords (map show (srCells reg)) ++ " bels=" ++ unwords (map show (srBels reg))
-                            | reg <- F.toList (ssRegions r)
-                            , not (S.member (srId reg) (ssMerged r))
-                            ]
-                    )
-         in _dbgOcc `seq` _dbgR `seq` r
+         in r
     stAfterExpand = expandRegions stAfterFind
-    _dbgExp =
-        if nb == 3
-            then
-                unsafePerformIO $
-                    appendFile
-                        "/tmp/hs_exp_dump.txt"
-                        ( unlines
-                            [ "exp " ++ show (srId reg) ++ " (" ++ show (srX0 reg) ++ "," ++ show (srY0 reg) ++ ")|>(" ++ show (srX1 reg) ++ "," ++ show (srY1 reg) ++ ") cells=" ++ unwords (map show (srCells reg)) ++ " bels=" ++ unwords (map show (srBels reg))
-                            | reg <- F.toList (ssRegions stAfterExpand)
-                            , not (S.member (srId reg) (ssMerged stAfterExpand))
-                            ]
-                        )
-            else ()
     workQueue0 = [(srId r, False) | r <- F.toList (ssRegions stAfterExpand), not (S.member (srId r) (ssMerged stAfterExpand))]
     loopQueue st locsQ cellsAtLocQ q = case q of
         [] -> locsQ
@@ -1656,16 +1413,11 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                             , Just bel <- [getBelByLocation e (Loc lx ly lz)]
                             , isValidBelForCellType e (cellType child) bel
                             ]
-                        _dbgCluster =
-                            if nm2 (cellName rootCell) == "storage_3.0.1$DPRAM_COMB0"
-                                then unsafePerformIO (appendFile "/tmp/hs_cluster.txt" ("rootBel=" ++ show (getBelLocation e rootBel') ++ " nchild=" ++ show (length (cellConstrChildren rootCell)) ++ " children=" ++ concat [show (unIdString cn) ++ "@" ++ show (getBelLocation e b) ++ " " | (cn, b) <- children] ++ "\n"))
-                                else ()
-                     in _dbgCluster `seq` if length children == length (cellConstrChildren rootCell)
+                     in if length children == length (cellConstrChildren rootCell)
                             then Just ((cellName rootCell, rootBel') : children)
                             else Nothing
         legaliseCell st ci =
-            let _dbgRng = unsafePerformIO (appendFile "/tmp/hs_rng.txt" (nm2 (cellName ci) ++ " " ++ show (rngState (lgRng st)) ++ "\n"))
-                cName = _dbgRng `seq` cellName ci
+            let cName = cellName ci
                 fbT = M.findWithDefault (buildFastBelsT e (cellType ci)) (cellType ci) fbMap
                 totalIters' = lgTotalIters st + 1
                 totalNoReset' = lgTotalNoReset st + 1
@@ -1702,11 +1454,7 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                             (ny0, rng2) = rngBounded (y1 - y0 + 1) rng1
                             nx = nx0 + x0
                             ny = ny0 + y0
-                            _dbgProbe =
-                                if nm2 cName == "basesoc_uart_core_tx2_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_LUT4_Z"
-                                    then unsafePerformIO (appendFile "/tmp/hs_cell_probe.txt" ("sol=" ++ show (plcX l) ++ "," ++ show (plcY l) ++ " r=" ++ show radius ++ " nx=" ++ show nx ++ " ny=" ++ show ny ++ " clust=" ++ (if cellCluster ci /= emptyId then "1" else "0") ++ "\n"))
-                                    else ()
-                            iterN' = _dbgProbe `seq` (iterN + 1)
+                            iterN' = (iterN + 1)
                             iterAt' = iterAt + 1
                             (radius1, iterN1, iterAt1) =
                                 if iterN' >= 10 * (radius + 1)
@@ -1767,12 +1515,8 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                     if radius1 > ripupN
                                                         then (True, rngA)
                                                         else let (v, r') = rngBounded 20000 rngA in (v < 10, r')
-                                        _dbgSkip =
-                                            if nm2 cName == "basesoc_uart_core_tx2_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_LUT4_Z"
-                                                then unsafePerformIO (appendFile "/tmp/hs_skip_probe.txt" ("skip z=" ++ show (biZ (belAt (ecp5Chipdb eA) sz)) ++ " avail=" ++ show avail ++ " avail'=" ++ show avail' ++ " r=" ++ show radius1 ++ "\n"))
-                                                else ()
                                      in if not avail'
-                                            then _dbgSkip `seq` goBel (eA, dA, locsA, rngA', heapA, placedA, bestA, bestInpA) rest
+                                            then goBel (eA, dA, locsA, rngA', heapA, placedA, bestA, bestInpA) rest
                                             else
                                                 let boundC = boundBelCell sz (ecp5Bind eA)
                                                     canUse = maybe True (\bc -> cellCluster (cellOf dA bc) == emptyId && cellBelStrength (cellOf dA bc) <= StrengthWeak) boundC
@@ -1782,15 +1526,11 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                             let (eR, dR) = maybe (eA, dA) (\bc -> let (bs, d') = unbindBel bc sz (ecp5Bind eA) dA in (setEcp5Bind bs eA, d')) boundC
                                                                 (eB, dB) = let (bs, d') = bindBelLut (combCtxOf eR) (ecp5Chipdb eR) cName sz StrengthWeak (ecp5Bind eR) dR in (setEcp5Bind bs eR, d')
                                                                 valid = isBelLocValidE ai eB cidOf dB sz
-                                                                _dbgBel =
-                                                                    if nm2 cName == "basesoc_uart_core_tx2_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_LUT4_Z"
-                                                                        then unsafePerformIO (appendFile "/tmp/hs_bel_probe.txt" ("z=" ++ show (biZ (belAt (ecp5Chipdb eB) sz)) ++ " avail=" ++ show avail ++ " avail'=" ++ show avail' ++ " boundC=" ++ maybe "-" (show . unIdString) boundC ++ " valid=" ++ (if valid then "1" else "0") ++ " slots=" ++ concatMap (\(zz, cc) -> show zz ++ ":" ++ show cc ++ " ") [(biZ (belAt (ecp5Chipdb eB) b), unIdString c) | b <- getBelsByTile eB nx ny, Just c <- [boundBelCell b (ecp5Bind eB)]] ++ "\n"))
-                                                                        else ()
                                                                 undo (eX2, dX2) =
                                                                     let (eU, dU) = let (bs, d') = unbindBel cName sz (ecp5Bind eX2) dX2 in (setEcp5Bind bs eX2, d')
                                                                         (eF, dF) = maybe (eU, dU) (\bc -> let (bs, d') = bindBelLut (combCtxOf eU) (ecp5Chipdb eU) bc sz StrengthWeak (ecp5Bind eU) dU in (setEcp5Bind bs eU, d')) boundC
                                                                      in (eF, dF)
-                                                        in _dbgBel `seq` (if not valid
+                                                        in (if not valid
                                                                     then let (eF, dF) = undo (eB, dB) in goBel (eF, dF, locsA, rngA', heapA, placedA, bestA, bestInpA) rest
                                                                     else
                                                                         if iterAt1 < needToExplore
@@ -1825,11 +1565,7 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                                      in cellBelStrength bci > StrengthWeak || cellCluster bci /= emptyId
                                                         )
                                                         targets
-                                                _dbgBad =
-                                                    if nm2 cName == "basesoc_uart_core_tx2_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_LUT4_Z"
-                                                        then unsafePerformIO (appendFile "/tmp/hs_bad.txt" ("bad=" ++ show bad ++ " targets=" ++ concatMap (\(tc, tb) -> show (unIdString tc) ++ "@" ++ show (biZ (belAt (ecp5Chipdb eA) tb)) ++ ":" ++ maybe "empty" (show . unIdString) (boundBelCell tb (ecp5Bind eA)) ++ " ") targets ++ "\n"))
-                                                        else ()
-                                             in _dbgBad `seq` (if bad
+                                             in (if bad
                                                     then goBel2 (eA, dA, locsA, rngA, heapA, placedA, bestA, bestInpA) rest
                                                     else
                                                         let moveOne (eM, dM, moves) (tc, tb) =
@@ -1853,10 +1589,6 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                                 in (eM2, dM2, M.insert tb boundC moves1)
                                                             (eP, dP, moves) = foldl' moveOne (eA, dA, M.empty :: M.Map BelId (Maybe IdString)) targets
                                                             valid = all (\tb -> isBelLocValidE ai eP cidOf dP tb) (M.keys moves)
-                                                            _dbgClu =
-                                                                if nm2 cName == "basesoc_uart_core_tx2_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_LUT4_Z"
-                                                                    then unsafePerformIO (appendFile "/tmp/hs_bel_probe.txt" ("CLUSTER z=" ++ show (biZ (belAt (ecp5Chipdb eP) sz)) ++ " valid=" ++ (if valid then "1" else "0") ++ " targets=" ++ concatMap (\(tc, tb) -> show (unIdString tc) ++ "@" ++ show (biZ (belAt (ecp5Chipdb eP) tb)) ++ " ") targets ++ "\n"))
-                                                                    else ()
                                                             revert (eR, dR) (tb, bc) =
                                                                 case boundBelCell tb (ecp5Bind eR) of
                                                                     Nothing ->
@@ -1869,7 +1601,7 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                                                 Nothing -> (setEcp5Bind bs eR, d')
                                                                                 Just bc' -> let (bs2, d2) = bindBelLut (combCtxOf eR) (ecp5Chipdb eR) bc' tb StrengthWeak bs d' in (setEcp5Bind bs2 eR, d2)
                                                                          in (eB2, dB2)
-                                                     in _dbgClu `seq` (if not valid
+                                                     in (if not valid
                                                             then let (eR2, dR2) = foldl' revert (eP, dP) (M.toList moves) in goBel2 (eR2, dR2, locsA, rngA, heapA, placedA, bestA, bestInpA) rest
                                                             else
                                                             let locsP =
@@ -1889,7 +1621,7 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                                             (M.toList moves)
                                                          in (eP, dP, locsP, rngA, heapP, True, bestA, bestInpA)))
                         in goBel2 (eX, dX, locsX, rngX, heapX, False, bestBel, bestInp) bels
-            in _dbgRng `seq` case go (lgE st) (lgD st) (lgLocs st) (lgRng st) (lgHeap st) 0 0 0 0 False Nothing maxBound of
+            in case go (lgE st) (lgD st) (lgLocs st) (lgRng st) (lgHeap st) 0 0 0 0 False Nothing maxBound of
                     (eF, dF, locsF, rngF, heapF) -> st0{lgE = eF, lgD = dF, lgLocs = locsF, lgRng = rngF, lgHeap = heapF}
         nm2 c = T.unpack (idToText (ecp5IdTable e) c)
         drive st = case remHeapPop (lgHeap st) of
@@ -1902,13 +1634,6 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                         Nothing ->
                             let st'' = legaliseCell st' ci
                                 ci2 = cellOf (lgD st'') c
-                                _dbg =
-                                    unsafePerformIO $
-                                        let p = M.findWithDefault 1 c chainMap
-                                            belStr = case cellBel ci2 of
-                                                Nothing -> "-"
-                                                Just bel -> let Loc x y z = getBelLocation (lgE st'') bel in show x ++ "," ++ show y ++ "," ++ show z
-                                         in appendFile "/tmp/hs_legal.txt" (nm2 c ++ " " ++ show p ++ " " ++ belStr ++ "\n")
-                             in _dbg `seq` drive st''
+                             in drive st''
         stFinal = drive (LegState e1 d1 locs0 rng0 heap0 0 2 0)
      in (lgE stFinal, lgD stFinal, lgLocs stFinal, lgRng stFinal)

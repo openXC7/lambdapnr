@@ -51,13 +51,7 @@ import qualified Data.Text as T
 import Control.Monad (forM_)
 import Data.Int (Int16, Int32)
 import Data.Word (Word64)
-import Lambdapnr.Kernel.IdString (IdString (..), IdTable, emptyId, idToText, intern, tableSlice)
-
--- | TEMPORARY debug: dump the id table slice after settings interning.
-lambdapnrDebugDump :: IdTable -> IO ()
-lambdapnrDebugDump tbl = do
-    xs <- tableSlice tbl 1969 46000
-    mapM_ (hPutStrLn stderr . ("TBL " ++)) (zipWith (\i s -> show i ++ ": " ++ s) [1969 ..] xs)
+import Lambdapnr.Kernel.IdString (IdString (..), IdTable, emptyId, idToText, intern)
 
 -- | @setting<float>@: read a numeric setting (@Property::as_double@).
 settingDouble :: M.Map IdString Property -> IdString -> Double -> Double
@@ -209,15 +203,6 @@ runFlow prog opts = case checkSingleDevice opts of
                                         Just (Just jsonFile) -> do
                                             jsrc <- TIO.readFile jsonFile
                                             r <- loadJsonDesign (ctxIdTable ctx') Nothing jsrc
-                                            _ <- case r of
-                                                Left _ -> pure ()
-                                                Right _ -> do
-                                                    stp <- lookupEnv "LAMBDAPNR_PACK_STOP"
-                                                    case stp of
-                                                        Just _ -> do
-                                                            lambdapnrDebugDump (ctxIdTable ctx')
-                                                            pure ()
-                                                        Nothing -> pure ()
                                             case r of
                                                 Left err -> die prog err
                                                 Right d -> do

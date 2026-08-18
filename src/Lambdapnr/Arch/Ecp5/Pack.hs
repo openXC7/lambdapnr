@@ -27,7 +27,6 @@ module Lambdapnr.Arch.Ecp5.Pack (
 ) where
 
 import Control.Monad (foldM, when)
-import Control.DeepSeq (deepseq)
 import Data.Function ((&))
 import Data.List (maximumBy, sortBy, sortOn)
 import System.IO (hPutStrLn, stderr)
@@ -50,7 +49,6 @@ import Lambdapnr.Arch.Ecp5.Types
 import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelByName, getBelGlobalBuf, getBelLocation, getBelName, getBelPins, getBelPinType, getBelPinWire, getBels, getBelType, getPipDstWire, getPipSrcWire, getPipsDownhill, getPipsUphill)
 import Lambdapnr.Kernel.Delay (ClockConstraint (..), DelayPair (..))
 import Lambdapnr.Kernel.IdString (IdString (..), emptyId, idToText)
-import Lambdapnr.Kernel.Netlist
 import Lambdapnr.Kernel.IdString (intern)
 import Lambdapnr.Kernel.Checksum (checksum)
 import Lambdapnr.Kernel.Netlist
@@ -59,7 +57,6 @@ import GHC.Stack (callStack, prettyCallStack)
 import System.Environment (lookupEnv)
 import System.IO.Unsafe (unsafePerformIO)
 import Control.Exception (evaluate)
-import qualified Control.Exception as E
 
 -- ---------------------------------------------------------------------------
 -- Logging (mirrors log_info/log_warning; goes to stderr)
@@ -908,12 +905,12 @@ packCarries pk =
                 (\ci -> netOnlyDrives pk (getPort ci (cid pk "COUT")) (isCarry pk) (cid pk "CIN") False Nothing)
                 1
         -- chain splitting
-        (pk1, splitChains) = let _m = "CHAINS " ++ show [[T.unpack (idStr pk c) | c <- cs] | CellChain cs <- take 1 carryChains] ++ " LENS " ++ show (map (\(CellChain cs) -> length cs) carryChains) in _m `deepseq` trace _m (foldl splitOne (pk, []) carryChains)
+        (pk1, splitChains) = foldl splitOne (pk, []) carryChains
         splitOne (pAcc, acc) ch =
             let (pAcc', chains) = splitCarryChain pAcc ch
              in (pAcc', acc ++ chains)
         -- chain packing
-        (pk2, packedChains) = let _m2 = "SPLIT " ++ show (map (\(CellChain cs) -> map (idStr pk1) cs) (take 2 splitChains)) in _m2 `deepseq` trace _m2 (foldl packChain (pk1, []) splitChains)
+        (pk2, packedChains) = foldl packChain (pk1, []) splitChains
         packChain (pkAcc, acc) (CellChain cells) =
             let (pkAcc', chainCells) = foldl packCell (pkAcc, []) cells
              in (pkAcc', chainCells : acc)
@@ -2727,60 +2724,43 @@ packDesign e d verbose settings = do
     printLogicUsage e d
     let pk0 = initialPackerWithSettings e d verbose settings
     stop <- lookupEnv "LAMBDAPNR_PACK_STOP"
-    let dumpOrd lbl pkk = do
-            e <- lookupEnv "LP_DUMP_ORDER"
-            when (isJust e) $
-                writeFile ("/tmp/lp_order_" ++ lbl ++ ".txt") (unlines [T.unpack (idStr pkk (cellName ci)) | ci <- cellsIter (pkDesign pkk)])
     let pk1 = pkCk "after-load" pk0
-    dumpOrd "load" pk1
     -- pass order mirrors nextpnr-0.10's Ecp5Packer::pack() (the binary the
     -- reference artifacts were built with): preplace_plls runs BEFORE
     -- pack_iologic, and 0.10 has no pack_eclk pass.
     pk2 <- packIo pk1
     let pk3 = pkCk "io" pk2
-    dumpOrd "io" pk3
     let pk4 = packDqsbuf pk3
         pk5 = pkCk "dqsbuf" pk4
         pk6 = preplacePlls pk5
         pk7 = pkCk "plls" pk6
-    dumpOrd "plls" pk7
     let pk8 = packIologic pk7
         pk9 = pkCk "iologic" pk8
         pk10 = packEbr pk9
         pk11 = pkCk "ebr" pk10
-    dumpOrd "ebr" pk11
     let pk12 = packDsps pk11
         pk13 = pkCk "dsps" pk12
         pk14 = packDcus pk13
         pk15 = pkCk "dcus" pk14
         pk16 = packMisc pk15
         pk17 = pkCk "misc" pk16
-    dumpOrd "misc" pk17
     let pk18 = packConstants pk17
         pk19 = pkCk "constants" pk18
-    dumpOrd "constants" pk19
     let pk20 = packDram pk19
         pk21 = pkCk "dram" pk20
-    dumpOrd "dram" pk21
     let pk22 = packCarries pk21
         pk23 = pkCk "carries" pk22
-    dumpOrd "carries" pk23
     let pk24 = packLuts pk23
         pk25 = pkCk "luts" pk24
-    dumpOrd "luts" pk25
     let pk26 = packLut5xs pk25
         pk27 = pkCk "lut5xs" pk26
-    dumpOrd "lut5xs" pk27
     let pk28 = packFfs pk27
         pk29 = pkCk "ffs" pk28
-    dumpOrd "ffs" pk29
     let pk30 = generateConstraints pk29
         pk31 = pkCk "constraints" pk30
-    dumpOrd "constraints" pk31
     let pk32 = promoteGlobals pk31
         pk33 = pkCk "globals" pk32
         imported = S.fromList (map cellName (cellsIter d))
-    dumpOrd "globals" pk33
     pk34 <- fixupHierarchy imported pk33
     let pk35 = pkCk "fixup" pk34
     let pkRes =
@@ -2959,13 +2939,9 @@ packLut5xs pk = do
 packFfs :: Packer -> Packer
 packFfs pk =
     let cells = cellsIter (pkDesign pk)
-        dumpDone = unsafePerformIO $
-            lookupEnv "LP_DUMP_FFS_ORDER" >>= \e ->
-                when (isJust e) $
-                    writeFile "/tmp/lp_ffs_iter.txt" (unlines [T.unpack (idStr pk (cellName ci)) | ci <- cells])
         (pk', pairs) = foldl packOne (pk, 0 :: Int) cells
         _ = info (printf "    %d FFs paired with LUTs." pairs)
-     in dumpDone `seq` pk'
+     in pk'
   where
     ffZ = belFfZ - belCombZ
     sd0Rename p ci = setP (cellName ci) (cid p "SD") (PropStr "0") p{pkDesign = renameCellPort (cellName ci) (cid p "DI") (cid p "M") (pkDesign p)}
@@ -3056,51 +3032,30 @@ relConstrCells pk a b dz =
 -- | @can_add_flipflop_to_macro@: is it legal to add an FF to a macro?
 canAddFlipflopToMacro :: Packer -> IdString -> IdString -> Bool
 canAddFlipflopToMacro pk comb ff =
-    trace ("CANADD " ++ T.unpack (idStr pk comb)) $
-    let _a = trace "CANADD ai-eval" (assignArchInfo (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb (pkE pk)))) (pkDesign pk))
-        _b = trace "CANADD ai-forced" (length (show _a) `seq` _a)
-        ai = _b
+    let ai = assignArchInfo (\t -> M.lookup t (tdConstIdByName (ecp5TimingDb (pkE pk)))) (pkDesign pk)
         cells0 = V.replicate 32 Nothing
         rootCell = case cellCluster (cellOf pk comb) of
             cl | cl /= emptyId -> cellOf pk cl
             _ -> cellOf pk comb
         processCell ci cs =
-            trace ("CANADD proc " ++ T.unpack (idStr pk (cellName ci))) $
             if getMacroCellXy pk (cellName ci) /= getMacroCellXy pk comb
                 then cs
-                else let z = trace ("CANADD z " ++ show (getMacroCellZ pk (cellName ci))) (getMacroCellZ pk (cellName ci)) in cs V.// [(z, Just ci)]
+                else let z = getMacroCellZ pk (cellName ci) in cs V.// [(z, Just ci)]
         cells1 =
-            trace "CANADD cells1-start" $
             if cellCluster (cellOf pk comb) /= emptyId
-                then let r = foldl (\cs ch -> processCell (cellOf pk ch) cs) (processCell rootCell cells0) (cellConstrChildren rootCell) in trace ("CANADD cells1-cl nch=" ++ show (length (cellConstrChildren rootCell))) r
-                else let r = foldl (\cs ch -> processCell (cellOf pk ch) cs) (processCell (cellOf pk comb) cells0) (cellConstrChildren (cellOf pk comb)) in trace "CANADD cells1-nocl" r
-        ffZ = trace ("CANADD ffz " ++ show (getMacroCellZ pk comb + (belFfZ - belCombZ))) (getMacroCellZ pk comb + (belFfZ - belCombZ))
-        ffCell = trace "CANADD ffcell-x" (cellOf pk ff)
-        idxRes = trace "CANADD idx-done" (cells1 V.! ffZ)
-     in case trace "CANADD pre-case" idxRes of
-            Just _ -> trace "CANADD slot-occupied" False
-            Nothing -> unsafePerformIO $
+                then foldl (\cs ch -> processCell (cellOf pk ch) cs) (processCell rootCell cells0) (cellConstrChildren rootCell)
+                else foldl (\cs ch -> processCell (cellOf pk ch) cs) (processCell (cellOf pk comb) cells0) (cellConstrChildren (cellOf pk comb))
+        ffZ = getMacroCellZ pk comb + (belFfZ - belCombZ)
+        ffCell = cellOf pk ff
+        idxRes = cells1 V.! ffZ
+     in case idxRes of
+            Just _ -> False
+            Nothing ->
                 let cells2 = cells1 V.// [(ffZ, Just ffCell)]
-                    slotCell z = trace ("CANADD slot " ++ show z) $ case cells2 V.! z of
+                    slotCell z = case cells2 V.! z of
                         Just c -> Just (c, ai)
                         Nothing -> Nothing
-                    step :: String -> IO () -> IO ()
-                    step lbl act =
-                        E.catch
-                            (act >> hPutStrLn stderr ("CANADD OK " ++ lbl))
-                            ( \e -> do
-                                hPutStrLn stderr ("CANADD LOOP-IN " ++ lbl ++ ": " ++ show (e :: E.SomeException))
-                                E.throwIO e
-                            )
-                 in do
-                    _ <- step "cells2-spine" (evaluate (V.length cells2) >> pure ())
-                    _ <- step "cells2-elems" (evaluate (foldr (\e a -> a + maybe 0 (const 1) e) 0 cells2) >> pure ())
-                    _ <- step "cells2-names" (evaluate (length [T.length (idStr pk nm) | Just c <- V.toList cells2, let nm = cellName c]) >> pure ())
-                    _ <- step "cells1-names" (evaluate (length [T.length (idStr pk nm) | Just c <- V.toList cells1, let nm = cellName c]) >> pure ())
-                    _ <- step "ffcell" (evaluate (T.length (idStr pk (cellName ffCell))) >> pure ())
-                    _ <- step "ai" (evaluate (length (show ai)) >> pure ())
-                    _ <- step "slices" (evaluate (slicesCompatible slotCell) >> pure ())
-                    pure (slicesCompatible slotCell)
+                 in slicesCompatible slotCell
 
 -- | The live users of a net in slot order (@users@ iteration).
 activeUsers :: V.Vector (Maybe PortRef) -> [PortRef]

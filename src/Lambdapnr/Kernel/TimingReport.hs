@@ -41,7 +41,7 @@ import Lambdapnr.Kernel.Delay (DelayPair (..), DelayQuad (..), DelayT, dqMaxDela
 import Lambdapnr.Kernel.IdString (IdString, IdTable, emptyId, idByName, idToText, intern)
 import Lambdapnr.Kernel.Netlist (CellInfo, Design (..), NetInfo (..), PipMap (..), PortDir (..), PortInfo (..), PortRef (..), cellBel, cellPorts, cellType, portNet)
 import Lambdapnr.Kernel.Timing (ClockEdge (..), TimingClockingInfo (..), TimingPortClass (..))
-import Lambdapnr.Kernel.Property (Property, propAsString, propIsString)
+import Lambdapnr.Kernel.Property (propAsString, propIsString)
 import Lambdapnr.Kernel.TimingAnalyser (
     ArrivReqTime (..),
     CellArc (..),
