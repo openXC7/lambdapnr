@@ -109,7 +109,7 @@ rioctrl reference design, pass by pass.
 | 16 | **Bitgen textcfg byte-identical to the oracle on both lineages** — permute_lut/CCU2 fix, JTAGG tile lookup, bram INITVAL/init data, PLL dynamic params, EBR/DSP tile groups, FF LSR/CLK null-net case, base-config entry order | a2a74a2 |
 | 17 | **Timing report at byte parity** — post-pack device-utilisation table, post-place fmax/histogram, post-route critical paths/Fmax/max delays/slack histogram and the `Program finished normally.` tail match the oracle byte-for-byte on both lineages | 26571cd |
 | 18 | **LPF FREQUENCY constraints end-to-end** — `addClock` clkconstr (float `getDelayFromNS` roundtrip), pack `generate_constraints` derived constraints (PLL input/VCO/output math, Property binary-string values, override warnings), clkconstr follows net renames (`nxio_to_tr` `$TRELLIS_IO_IN`) and global promotion (`insert_dcc`), timing-report fmax targets + slack-histogram periods from the constraint — verified byte-identical on a new FREQUENCY lineage | 56e6385 |
-| 19 | **Output writers `--write`/`--sdf`/`--report` at byte parity** — json11 `write_json_file` design dump (sorted keys, %.17g doubles, dict-ordered attributes/params/ports), `writeSDF` back-annotation (DELAYFILE/CELL/IOPATH/SETUPHOLD), `writeJsonReport` critical-path JSON — all three files byte-identical to the oracle on both lineages, with the textcfg and all checksums unchanged | 1979794 |
+| 19 | **Output writers `--write`/`--sdf`/`--report` at byte parity** — json11 `write_json_file` design dump (sorted keys, %.17g doubles, dict-ordered attributes/params/ports), `writeSDF` back-annotation (DELAYFILE/CELL/IOPATH/SETUPHOLD), `writeJsonReport` critical-path JSON — all three files byte-identical to the oracle on all three lineages (A = no `--lpf`, B = plain `--lpf`, B′ = `FREQUENCY` `--lpf`), with the textcfg and all checksums unchanged | 1979794 |
 
 Working tree is clean: milestone 19 (the output writers) is committed. The
 writers workstream added Kernel/CFormat.hs (C %g/%.17g via exact dyadic decimal
@@ -506,9 +506,10 @@ moves.
     - The fmax target override is float division `1000/getDelayNS(period)`;
       the histogram `clk_period` is a FLOAT holding the constrained period.
 7. ~~**Output writers (`--write`/`--sdf`/`--report`)**~~ **RESOLVED (milestone 19)**:
-   the three files are **byte-identical** to the oracle on both lineages (and the
-   textcfg stays byte-identical; checksums unchanged: A 0xa0768a93/0xf1975059/
-   0x94a9ffe1, B 0x889a4909/0x519b603f/0x728f80cc). The writers run after
+   the three files are **byte-identical** to the oracle on all three lineages
+   (A = no `--lpf`, B = plain `--lpf`, B′ = `FREQUENCY` `--lpf`; the textcfg stays
+   byte-identical; checksums unchanged: A 0xa0768a93/0xf1975059/0x94a9ffe1,
+   B/B′ 0x889a4909/0x519b603f/0x728f80cc). The writers run after
    `customBitstream` in the order write -> sdf -> report. Trap list:
    - **The C++ `std::sort` is libstdc++ introsort and UNSTABLE** — the
      `route_globals` toroute sort by `global_route_priority` (90/99) reorders
