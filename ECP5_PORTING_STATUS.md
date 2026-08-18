@@ -459,12 +459,13 @@ moves.
    bogus MIB_DSP8/MIB2_DSP8 pair in the comprehension; base configs were
    added with `foldr` (reverse of the C++ add_unknown order); the `.bram_init`
    renderer was missing the trailing blank line.
-4. Remove debug scaffolding: CANADD/SC/CHAINS/SPLIT traces, `LP_DUMP_FFS_ORDER`
-   + `LP_DUMP_ORDER` order dumps, packFfs dump, `deepseq` hacks, TBL dump
-   (`lambdapnrDebugDump`), and the placer dumps (_dbgCut/_dbgPiv/_dbgBc/
-   _dbgAU/_dbgCols/_dbgBin, sorted20, spread-dump write, `LPDBG main done`);
-   keep LPCHK/LPDBG until the final gate. (The bitgen LPCHK_* traces added
-   during the milestone-16 hunt have been removed again from Bitgen.hs.)
+4. ~~Remove debug scaffolding~~ **DONE (efcec0a)**: the CANADD/CHAINS/SPLIT
+   traces, `LP_DUMP_*` order dumps, the `/tmp/hs_*` placer dumps (solve/
+   spread/crit/regions/ties/...), the `_dbg*` seq-forces and the TBL dump
+   are gone from Pack.hs/PlacerHeap.hs/Main.hs; the env-gated LPCHK/LPDBG
+   verification harness (pkCk checksums, stateDump, LP_ROUTE_RESUME/
+   LP_PLACER1_RESUME saves) is kept. Cleanup verified behavior-neutral on
+   both lineages (checksums, byte-identical textcfg + report sections).
 5. Update REFERENCE.md's golden pack checksum (0xc76929e2 is the old binary's
    value; the current 0.10-tag oracle reproduces the reference textcfg
    byte-for-byte with post-pack 0x889a4909).
