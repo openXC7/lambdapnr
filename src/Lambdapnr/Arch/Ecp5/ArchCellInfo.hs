@@ -292,7 +292,7 @@ assignArchInfo resolve d =
     getPortNet ci p = case portNet =<< M.lookup p (cellPorts ci) of
         Just net -> net
         Nothing -> emptyId
-    netOfNet n d = M.findWithDefault (NetInfo emptyId emptyId (PortRef Nothing emptyId) V.empty [] M.empty M.empty emptyId) n (designNets d)
+    netOfNet n d = M.findWithDefault (NetInfo emptyId emptyId (PortRef Nothing emptyId) V.empty [] M.empty [] M.empty [] emptyId) n (designNets d)
 
 -- | The bel z for comb/ff/ramw slots.
 belCombZ :: Int

@@ -71,15 +71,15 @@ cliSemanticsTests =
                 Left err -> assertFailure err
                 Right ctx' -> do
                     (freq, _) <- getSetting ctx' "target_freq" (0.0 :: Double)
-                    (tmdriv, _) <- getSetting ctx' "timing_driven" True
+                    (tmdriv, _) <- getSetting ctx' "timing_driven" (1 :: Int)
                     (alpha, _) <- getSetting ctx' "placerHeap/alpha" (0.0 :: Double)
                     (archName, _) <- getSetting ctx' "arch.name" ""
                     (archType, _) <- getSetting ctx' "arch.type" ""
                     (pkg, _) <- getSetting ctx' "arch.package" ""
                     assertEqual "target_freq default" 12e6 freq
-                    assertEqual "timing_driven default" True tmdriv
+                    assertEqual "timing_driven default" 1 tmdriv
                     assertEqual "placerHeap/alpha default" 0.1 alpha
-                    assertEqual "arch.name" "ecp5" archName
+                    assertEqual "arch.name" "ARCHNAME" archName
                     assertEqual "arch.type" "lfe5u_45f" archType
                     assertEqual "arch.package" "CABGA381" pkg
         ]

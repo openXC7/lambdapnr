@@ -30,7 +30,7 @@ loadDesign path = do
     tbl <- newIdTable
     src <- TIO.readFile path
     r <- loadJsonDesign tbl Nothing src
-    pure (fmap (\d -> (d, tbl)) r)
+    pure (fmap (\(d, _) -> (d, tbl)) r)
 
 -- | Cell type counts of a design, keyed by the type name.
 typeCounts :: IdTable -> Design bel wire pip -> M.Map String Int

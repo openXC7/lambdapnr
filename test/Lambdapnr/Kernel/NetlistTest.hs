@@ -29,7 +29,9 @@ mkCell name typ =
         , cellPorts = M.empty
         , cellPortOrder = []
         , cellAttrs = M.empty
+        , cellAttrOrder = []
         , cellParams = M.empty
+        , cellParamOrder = []
         , cellBel = Nothing
         , cellBelStrength = StrengthNone
         , cellCluster = IdString 0
@@ -56,7 +58,7 @@ setup cellId netId dir =
     d2 =
         addNet
             netId
-            (NetInfo netId (IdString 0) (PortRef Nothing portName) V.empty [] M.empty M.empty (IdString 0))
+            (NetInfo netId (IdString 0) (PortRef Nothing portName) V.empty [] M.empty [] M.empty [] (IdString 0))
             d1
 
 netlistTests :: TestTree
@@ -114,7 +116,7 @@ netlistTests =
                 d2 =
                     addNet
                         (IdString 3)
-                        (NetInfo (IdString 3) (IdString 0) (PortRef Nothing (i 100)) V.empty [] M.empty M.empty (IdString 0))
+                        (NetInfo (IdString 3) (IdString 0) (PortRef Nothing (i 100)) V.empty [] M.empty [] M.empty [] (IdString 0))
                         d1
                 d3 = connectPort (IdString 1) (i 100) (IdString 3) d2
                 d4 = connectPort (IdString 4) (i 100) (IdString 3) d3

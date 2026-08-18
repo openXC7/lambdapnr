@@ -12,6 +12,7 @@ module Lambdapnr.Kernel.Context (
     newContextWith,
     getSetting,
     setSetting,
+    setCtxAttr,
     ctxChecksum,
 ) where
 
@@ -34,6 +35,12 @@ data Context a = Context
     { ctxIdTable :: IdTable
     , ctxArch :: a
     , ctxSettings :: Map IdString Property
+    , ctxSettingsOrder :: [IdString]
+    -- ^ setting insertion order (the C++ @settings@ dict iterates its
+    -- reverse); maintained by 'setSetting'/'getSetting'
+    , ctxAttrs :: Map IdString Property
+    -- ^ module-level attributes (the C++ @ctx->attrs@)
+    , ctxAttrOrder :: [IdString]
     , ctxDesign :: Design (Bel a) (Wire a) (Pip a)
     , ctxRng :: Rng
     }
@@ -51,6 +58,9 @@ newContextWith tbl arch =
         { ctxIdTable = tbl
         , ctxArch = arch
         , ctxSettings = M.empty
+        , ctxSettingsOrder = []
+        , ctxAttrs = M.empty
+        , ctxAttrOrder = []
         , ctxDesign = emptyDesign
         , ctxRng = newRng
         }
@@ -66,14 +76,30 @@ getSetting ctx name def = do
         Just p -> pure (readSetting p, ctx)
         Nothing ->
             let p = defaultSetting def
-                ctx' = ctx{ctxSettings = M.insert key p (ctxSettings ctx)}
+                ctx' = ctx{ctxSettings = M.insert key p (ctxSettings ctx), ctxSettingsOrder = ctxSettingsOrder ctx ++ [key]}
              in pure (def, ctx')
 
 -- | Raw setting write (mirrors @ctx->settings[id] = value@).
 setSetting :: Context arch -> Text -> Property -> IO (Context arch)
 setSetting ctx name p = do
     key <- intern (ctxIdTable ctx) name
-    pure (ctx{ctxSettings = M.insert key p (ctxSettings ctx)})
+    pure
+        ( ctx
+            { ctxSettings = M.insert key p (ctxSettings ctx)
+            , ctxSettingsOrder = if M.member key (ctxSettings ctx) then ctxSettingsOrder ctx else ctxSettingsOrder ctx ++ [key]
+            }
+        )
+
+-- | Set a module-level attribute (the C++ @ctx->attrs[id] = value@).
+setCtxAttr :: Context arch -> Text -> Property -> IO (Context arch)
+setCtxAttr ctx name p = do
+    key <- intern (ctxIdTable ctx) name
+    pure
+        ( ctx
+            { ctxAttrs = M.insert key p (ctxAttrs ctx)
+            , ctxAttrOrder = if M.member key (ctxAttrs ctx) then ctxAttrOrder ctx else ctxAttrOrder ctx ++ [key]
+            }
+        )
 
 {- | The design checksum — the determinism oracle (see
 'Lambdapnr.Kernel.Checksum').

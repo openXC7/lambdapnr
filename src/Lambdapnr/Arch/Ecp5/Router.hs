@@ -44,10 +44,8 @@ import Control.Monad (foldM, unless, when)
 import Data.Foldable (foldl')
 import Data.Function (on)
 import Data.Int (Int8)
-import Data.List (sortBy, sortOn)
 import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe, isJust, listToMaybe)
-import Data.Ord (comparing)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -69,6 +67,7 @@ import Lambdapnr.Kernel.Arch (getBelPinWire, getPipDelay, getPipDstWire, getPipS
 import Lambdapnr.Kernel.Delay (DelayT, dqMaxDelay)
 import Lambdapnr.Kernel.DeterministicRng
 import Lambdapnr.Kernel.IdString (IdString (..), emptyId, idToText)
+import Lambdapnr.Kernel.Introsort (stdSortBy)
 import Lambdapnr.Kernel.Netlist
 import Lambdapnr.Kernel.TimingAnalyser (CellPortKey (..), PerPort (..), PortDomainPairData (..), TimingAnalyser (..), buildTimingAnalyser, criticalityOf, runTimingAnalyser)
 
@@ -277,9 +276,11 @@ routeEcp5Globals e0 d0 =
 routeGlobalsR :: Ecp5 -> Design BelId WireId PipId -> (Ecp5, Design BelId WireId PipId)
 routeGlobalsR e0 d0 =
     let (_, _, toroute0, clocks0, e1, d1) = foldl' step init0 (cellsIter d0)
-        -- std::sort by priority; for <= 16 elements libstdc++ degrades to
-        -- insertion sort, which is stable (verified against the oracle dump)
-        sorted = sortBy (comparing (\(u, _) -> globalRoutePriorityR e1 d1 u)) toroute0
+        -- std::sort by priority with the exact libstdc++ introsort
+        -- permutation (UNSTABLE: equal-priority users get reordered the
+        -- same way GCC does; the ROUTING strings in --write output depend
+        -- on it).
+        sorted = stdSortBy (\(u1, _) (u2, _) -> globalRoutePriorityR e1 d1 u1 < globalRoutePriorityR e1 d1 u2) toroute0
         _ = lpTorouteDump e1 d1 sorted
         (e2, d2) = foldl' (routeUser clocks0) (e1, d1) sorted
      in (e2, d2)
@@ -306,7 +307,7 @@ routeGlobalsR e0 d0 =
                                     let glbid = if drivesFab then S.findMin fabG else S.findMin allG
                                         (e', d', routed) = routeOntoGlobalR e d clock glbid
                                         _ = if not routed then error "route_globals: failed to route onto global" else ()
-                                        toroute' = [(u, glbid) | u <- activeUsersR (netUsers ni)] ++ toroute
+                                        toroute' = toroute ++ [(u, glbid) | u <- activeUsersR (netUsers ni)]
                                      in (S.delete glbid allG, S.delete glbid fabG, toroute', M.insert glbid clock clocks, e', d')
     routeUser clocks0 (e, d) (u, glbid) =
         let ciName = fromMaybe (error "route_globals: dangling user") (prCell u)
@@ -711,7 +712,9 @@ data RState = RState
     , rsCfg :: !RouterCfg
     , rsArcQueue :: !(Seq.Seq ArcEntry)
     , rsWireToArcs :: !(M.Map WireId (S.Set ArcKey))
-    , rsArcToWires :: !(M.Map ArcKey (S.Set WireId))
+    , rsArcToWires :: !(M.Map ArcKey [WireId])
+    -- ^ per-arc wire pool (the C++ pool: insertion order, swap-erase,
+    -- iterated in REVERSE by the arc-ripup unbind loop)
     , rsQueuedArcs :: !(S.Set ArcKey)
     , rsWireScores :: !(M.Map WireId Int)
     , rsNetScores :: !(M.Map IdString Int)
@@ -730,6 +733,10 @@ sortedShuffleSt :: (Ord a) => Rng -> V.Vector a -> RState -> (V.Vector a, RState
 sortedShuffleSt r v st =
     let (v', r') = sortedShuffle r v
      in (v', st{rsRng = r'})
+
+-- | @pool::insert@: append-if-absent (insertion order preserved).
+poolInsert :: Eq a => [a] -> [a] -> [a]
+poolInsert new old = foldl' (\acc x -> if x `elem` acc then acc else acc ++ [x]) old new
 
 -- | @skip_net@ (ECP5: @constant_value@ is never set).
 skipNetS :: RState -> NetInfo BelId WireId PipId -> Bool
@@ -789,7 +796,7 @@ ripupNetS net st0 =
         let arcsSet = M.findWithDefault S.empty w (rsWireToArcs st)
             st1 =
                 st
-                    { rsArcToWires = foldl' (\m a -> M.adjust (S.delete w) a m) (rsArcToWires st) (S.toList arcsSet)
+                    { rsArcToWires = foldl' (\m a -> M.adjust (swapRemovePort w) a m) (rsArcToWires st) (S.toList arcsSet)
                     , rsWireToArcs = M.insert w S.empty (rsWireToArcs st)
                     }
             (arcsV, st2) = sortedShuffleSt (rsRng st1) (V.fromList (S.toAscList arcsSet)) st1
@@ -809,7 +816,7 @@ ripupWireS wire st0 =
         arcsSet = M.findWithDefault S.empty wire (rsWireToArcs st1)
         st2 =
             st1
-                { rsArcToWires = foldl' (\m a -> M.adjust (S.delete wire) a m) (rsArcToWires st1) (S.toList arcsSet)
+                { rsArcToWires = foldl' (\m a -> M.adjust (swapRemovePort wire) a m) (rsArcToWires st1) (S.toList arcsSet)
                 , rsWireToArcs = M.insert wire S.empty (rsWireToArcs st1)
                 }
         (arcsV, st3) = sortedShuffleSt (rsRng st2) (V.fromList (S.toAscList arcsSet)) st2
@@ -877,7 +884,7 @@ setupS st0 =
                                     let st1 =
                                             st
                                                 { rsWireToArcs = M.insertWith S.union dstW (S.singleton arc) (rsWireToArcs st)
-                                                , rsArcToWires = M.insertWith S.union arc (S.singleton dstW) (rsArcToWires st)
+                                                , rsArcToWires = M.insertWith poolInsert arc [dstW] (rsArcToWires st)
                                                 }
                                      in (walkBack ni srcW arc dstW dstW st1, dstMap')
     walkBack ni srcW arc dstW cursor st
@@ -891,7 +898,7 @@ setupS st0 =
                         st1 =
                             st
                                 { rsWireToArcs = M.insertWith S.union src' (S.singleton arc) (rsWireToArcs st)
-                                , rsArcToWires = M.insertWith S.union arc (S.singleton src') (rsArcToWires st)
+                                , rsArcToWires = M.insertWith poolInsert arc [src'] (rsArcToWires st)
                                 }
                      in walkBack ni srcW arc dstW src' st1
 
@@ -936,9 +943,9 @@ routeArcS arc st0
     u = fromMaybe (error "route_arc: inactive user") (netUsers ni V.! akSlot arc)
     dstW = fromMaybe (error "route_arc: no sink wire") (netinfoSinkWireR (rsArch st0) (rsDesign st0) u)
     crit = criticalityOf (rsTmg st0) (CellPortKey (fromMaybe emptyId (prCell u)) (prPort u))
-    oldWires = M.findWithDefault S.empty arc (rsArcToWires st0)
-    st1 = st0{rsRipupFlag = False, rsArcToWires = M.insert arc S.empty (rsArcToWires st0)}
-    st2 = S.foldl' (\s w -> unbindOld arc w s) st1 oldWires
+    oldWires = M.findWithDefault [] arc (rsArcToWires st0)
+    st1 = st0{rsRipupFlag = False, rsArcToWires = M.insert arc [] (rsArcToWires st0)}
+    st2 = foldl' (\s w -> unbindOld arc w s) st1 (reverse oldWires)
     -- LPDBG: per-arc A* trace (LPCHK_TRACE_NET/SLOT/FILE)
     traceH = unsafePerformIO $ do
         tn <- lookupEnv "LPCHK_TRACE_NET"
@@ -974,7 +981,7 @@ routeArcS arc st0
     stB =
         stA
             { rsWireToArcs = M.insertWith S.union srcW (S.singleton arc) (rsWireToArcs stA)
-            , rsArcToWires = M.insertWith S.union arc (S.singleton srcW) (rsArcToWires stA)
+            , rsArcToWires = M.insertWith poolInsert arc [srcW] (rsArcToWires stA)
             }
     unbindOld arc wire st =
         let arcWires = M.findWithDefault S.empty wire (rsWireToArcs st)
@@ -1204,7 +1211,7 @@ routeArcS arc st0
                 st2' =
                     st1
                         { rsWireToArcs = M.insertWith S.union cursor (S.singleton arc) (rsWireToArcs st1)
-                        , rsArcToWires = M.insertWith S.union arc (S.singleton cursor) (rsArcToWires st1)
+                        , rsArcToWires = M.insertWith poolInsert arc [cursor] (rsArcToWires st1)
                         }
              in case mbPip of
                     Nothing -> (st2', ())

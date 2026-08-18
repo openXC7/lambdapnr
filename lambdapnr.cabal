@@ -37,16 +37,20 @@ library
     Lambdapnr.Arch.Ecp5.Types
     Lambdapnr.Kernel.Arch
     Lambdapnr.Kernel.ArchCheck
+    Lambdapnr.Kernel.CFormat
     Lambdapnr.Kernel.Checksum
     Lambdapnr.Kernel.Context
     Lambdapnr.Kernel.Delay
     Lambdapnr.Kernel.DeterministicRng
     Lambdapnr.Kernel.HashTable
     Lambdapnr.Kernel.IdString
+    Lambdapnr.Kernel.Introsort
     Lambdapnr.Kernel.Json
     Lambdapnr.Kernel.JsonFrontend
+    Lambdapnr.Kernel.JsonWrite
     Lambdapnr.Kernel.Netlist
     Lambdapnr.Kernel.Property
+    Lambdapnr.Kernel.Sdf
     Lambdapnr.Kernel.Timing
     Lambdapnr.Kernel.TimingAnalyser
     Lambdapnr.Kernel.TimingReport

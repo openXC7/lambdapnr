@@ -376,8 +376,11 @@ applyGeneralOpts args opts ctx0 = do
     -- hashes id indices, so it must match the C++ exactly)
     ctx1 <- setSetting ctx0 "arch.package" (propFromString (eaPackage args))
     ctx2 <- setSetting ctx1 "arch.speed" (propFromString (T.pack (speedString (eaSpeed args))))
-    -- setupContext first line: settings.find(id("seed"))
-    ctx3 <- setSetting ctx2 "seed" (propFromInt (fromIntegral (rngState (ctxRng ctx2))) 64)
+    -- setupContext first line: settings.find(id("seed")) — interns "seed"
+    -- here, but the C++ only INSERTS the setting later (after the flag
+    -- section, in the defaults tail), so only the interning happens now.
+    _ <- intern (ctxIdTable ctx2) "seed"
+    let ctx3 = ctx2
     -- flag section in the C++ setupContext order (NOT command-line order)
     r1 <- foldM applyOne (Right ctx3) flagOrder
     case r1 of
@@ -496,22 +499,24 @@ applyGeneralOpts args opts ctx0 = do
 
     -- defaults, mirroring the tail of setupContext: only set when
     -- absent, so user options win. placer/router are constids in the
-    -- chipdb (no table growth); ARCHNAME is interned by archId().
+    -- chipdb (no table growth); ARCHNAME is interned by archId(). The
+    -- values match the C++ stores exactly (to_string(12e6), the 32-bit
+    -- int Property for bools/ints, to_string(0.1) etc.).
     applyDefaults :: Context arch -> IO (Context arch)
     applyDefaults ctx =
         foldM setDefault ctx
-            [ ("target_freq", propFromString "1.2e7")
-            , ("timing_driven", propTrue)
-            , ("slack_redist_iter", propFromInt 0 64)
-            , ("auto_freq", propFalse)
+            [ ("target_freq", propFromString "12000000.000000")
+            , ("timing_driven", propFromInt 1 32)
+            , ("slack_redist_iter", propFromInt 0 32)
+            , ("auto_freq", propFromInt 0 32)
             , ("placer", propFromString "heap")
             , ("router", propFromString "router1")
-            , ("ARCHNAME", propFromString "ecp5")
-            , ("arch.name", propFromString "ecp5")
+            , ("ARCHNAME", propFromString "ARCHNAME")
+            , ("arch.name", propFromString "ARCHNAME")
             , ("arch.type", propFromString (T.pack (deviceTypeName (eaDevice args))))
             , ("seed", propFromInt (fromIntegral (rngState (ctxRng ctx))) 64)
-            , ("placerHeap/alpha", propFromString "0.1")
-            , ("placerHeap/beta", propFromString "0.9")
+            , ("placerHeap/alpha", propFromString "0.100000")
+            , ("placerHeap/beta", propFromString "0.900000")
             , ("placerHeap/criticalityExponent", propFromString "2")
             , ("placerHeap/timingWeight", propFromString "10")
             ]
@@ -524,10 +529,10 @@ applyGeneralOpts args opts ctx0 = do
                 then pure c
                 else setSetting c (T.pack k) p
 
-    -- stored as string properties (the C++ assigns @Property(true)@,
-    -- a numeric; the typed accessors read either form)
-    propTrue = propFromString "True"
-    propFalse = propFromString "False"
+    -- stored as numeric properties (the C++ assigns @Property(bool)@,
+    -- a 32-bit int Property; bool_or_default reads the integer value)
+    propTrue = propFromInt 1 32
+    propFalse = propFromInt 0 32
 
     setStr :: String -> Context arch -> String -> IO (Either String (Context arch))
     setStr k ctx v = Right <$> setSetting ctx (T.pack k) (propFromString (T.pack v))
@@ -558,4 +563,3 @@ randomSeed = do
     bs <- BS.hGet h 8
     hClose h
     pure (BS.foldl' (\acc w -> acc * 256 + fromIntegral w) 0 bs)
-

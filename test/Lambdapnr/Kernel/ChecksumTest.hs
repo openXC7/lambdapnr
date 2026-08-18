@@ -51,7 +51,9 @@ slice =
                 ]
         , cellPortOrder = [i 3, i 4, i 5]
         , cellAttrs = M.singleton (i 20) (propFromInt 5 16)
+        , cellAttrOrder = [i 20]
         , cellParams = M.singleton (i 21) (propFromInt 1 32)
+        , cellParamOrder = [i 21]
         , cellBel = Just 42
         , cellBelStrength = StrengthWeak
         , cellCluster = i 0
@@ -71,7 +73,9 @@ drv =
         , cellPorts = M.fromList [(i 6, PortInfo (i 6) Nothing PortOut 0)]
         , cellPortOrder = [i 6]
         , cellAttrs = M.empty
+        , cellAttrOrder = []
         , cellParams = M.empty
+        , cellParamOrder = []
         , cellBel = Nothing
         , cellBelStrength = StrengthNone
         , cellCluster = i 0
@@ -83,10 +87,10 @@ drv =
         }
 
 net0 :: NetInfo DummyBel DummyWire DummyPip
-net0 = NetInfo (i 30) (i 0) (PortRef Nothing (i 6)) V.empty [] M.empty M.empty (i 0)
+net0 = NetInfo (i 30) (i 0) (PortRef Nothing (i 6)) V.empty [] M.empty [] M.empty [] (i 0)
 
 net1 :: NetInfo DummyBel DummyWire DummyPip
-net1 = NetInfo (i 31) (i 0) (PortRef (Just (i 1)) (i 5)) V.empty [] M.empty M.empty (i 0)
+net1 = NetInfo (i 31) (i 0) (PortRef (Just (i 1)) (i 5)) V.empty [] M.empty [] M.empty [] (i 0)
 
 mkDesign :: Design DummyBel DummyWire DummyPip
 mkDesign =

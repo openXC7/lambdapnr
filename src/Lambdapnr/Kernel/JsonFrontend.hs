@@ -234,7 +234,7 @@ type Import a = IO (Either String a)
 -- | Load a yosys netlist document. The optional override selects the
 -- top module by name (the @frontend\/top@ setting); @Nothing@ uses the
 -- @top@ attribute, then autodetection.
-loadJsonDesign :: IdTable -> Maybe Text -> Text -> Import (Design bel wire pip)
+loadJsonDesign :: IdTable -> Maybe Text -> Text -> Import (Design bel wire pip, [(Text, Property)])
 loadJsonDesign tbl topOverride src = do
     let pv = parseJson src
     pv `seq` case pv of
@@ -256,6 +256,11 @@ loadJsonDesign tbl topOverride src = do
                 Left err -> pure (Left err)
                 Right topName -> do
                     let topMod = maybe (JObj []) id (lookup topName mods)
+                        -- import_module_attrs: the module attrs (sorted
+                        -- iteration of the json11 map), values via
+                        -- from_string — stored on ctx->attrs in the C++
+                        topAttrs = attrsOf topMod
+                        topAttrProps = [(k, propFromStr (strValue v)) | (k, v) <- topAttrs]
                     -- import_module (top): port names first, then module
                     -- attributes (interned, in sorted order)
                     st0 <- foldM (internPortName tbl) emptyState (portsOf topMod)
@@ -285,7 +290,7 @@ loadJsonDesign tbl topOverride src = do
                                     _ <- intern tbl "synth"
                                     _ <- intern tbl "NEXTPNR_BEL"
                                     _ <- intern tbl "ROUTING"
-                                    pure (Right d3)
+                                    pure (Right (d3, topAttrProps))
   where
     bitExists (JNum b) = b >= 0
     bitExists _ = False
@@ -300,7 +305,7 @@ loadJsonDesign tbl topOverride src = do
                 (\d' b -> case b of
                     JNum bi | bi >= 0
                         , Just netId <- IM.lookup (truncate bi) (stNetByBit st) ->
-                            d'{designNets = M.adjust (\ni -> ni{netAttrs = M.union (M.fromList kvs) (netAttrs ni)}) netId (designNets d')}
+                            d'{designNets = M.adjust (\ni -> ni{netAttrs = M.union (M.fromList kvs) (netAttrs ni), netAttrOrder = netAttrOrder ni ++ [k | (k, _) <- kvs, not (M.member k (netAttrs ni))]}) netId (designNets d')}
                     _ -> d')
                 d
                 (arrItems (objLookupDef (JArr []) "bits" nn))
@@ -365,7 +370,9 @@ freshNet name =
         , netUsers = V.empty
         , netUserFree = []
         , netWires = M.empty
+        , netWireOrder = []
         , netAttrs = M.empty
+        , netAttrOrder = []
         , netConstantValue = emptyId
         }
 
@@ -431,7 +438,9 @@ importCell tbl acc (name, cd) = do
                                     , cellPorts = M.empty
                                     , cellPortOrder = []
                                     , cellAttrs = M.empty
+                                    , cellAttrOrder = []
                                     , cellParams = M.empty
+                                    , cellParamOrder = []
                                     , cellBel = Nothing
                                     , cellBelStrength = StrengthNone
                                     , cellCluster = emptyId
@@ -447,9 +456,9 @@ importCell tbl acc (name, cd) = do
                     case r of
                         Left err -> pure (Left err)
                         Right (d2, st2) -> do
-                            attrs <- attrsOf2 tbl cd
-                            params <- paramsOf2 tbl cd
-                            let d3 = d2{designCells = M.adjust (\ci -> ci{cellAttrs = attrs, cellParams = params}) cellId (designCells d2)}
+                            (attrs, attrsOrd) <- attrsOf2 tbl cd
+                            (params, paramsOrd) <- paramsOf2 tbl cd
+                            let d3 = d2{designCells = M.adjust (\ci -> ci{cellAttrs = attrs, cellAttrOrder = attrsOrd, cellParams = params, cellParamOrder = paramsOrd}) cellId (designCells d2)}
                             pure (Right (d3, st2))
 
 dirOf :: Json -> PortDir
@@ -459,17 +468,19 @@ dirOf v = case strValue v of
     _ -> PortInout
 
 -- | The cell attributes (values via from_string, like the C++
--- @Property::from_string@) — interned AFTER the connections.
-attrsOf2 :: IdTable -> Json -> IO (M.Map IdString Property)
+-- @Property::from_string@) — interned AFTER the connections. The key
+-- order is the insertion order (sorted text), which the C++ dict
+-- iterates in reverse — not the id index order (chipdb constids).
+attrsOf2 :: IdTable -> Json -> IO (M.Map IdString Property, [IdString])
 attrsOf2 tbl cd = do
     kvs <- mapM (\(k, v) -> (,) <$> intern tbl k <*> pure (propFromStr (strValue v))) (attrsOf cd)
-    pure (M.fromList kvs)
+    pure (M.fromList kvs, map fst kvs)
 
 -- | The cell parameters (values via from_string).
-paramsOf2 :: IdTable -> Json -> IO (M.Map IdString Property)
+paramsOf2 :: IdTable -> Json -> IO (M.Map IdString Property, [IdString])
 paramsOf2 tbl cd = do
     kvs <- mapM (\(k, v) -> (,) <$> intern tbl k <*> pure (propFromStr (strValue v))) (sortedPairs "parameters" cd)
-    pure (M.fromList kvs)
+    pure (M.fromList kvs, map fst kvs)
 
 -- | Import one port connection of a cell.
 importConn :: IdTable -> [(Text, PortDir)] -> Text -> IdString -> Either String (Design bel wire pip, ImportState) -> (Text, [Json]) -> Import (Design bel wire pip, ImportState)
@@ -557,7 +568,9 @@ importBit tbl cellName cellId port dir width acc (i, bit) = do
                             , cellPorts = M.singleton yId (PortInfo yId Nothing PortOut 0)
                             , cellPortOrder = [yId]
                             , cellAttrs = M.empty
+                            , cellAttrOrder = []
                             , cellParams = M.empty
+                            , cellParamOrder = []
                             , cellBel = Nothing
                             , cellBelStrength = StrengthNone
                             , cellCluster = emptyId
@@ -618,7 +631,9 @@ importPortBit tbl pname dir width acc (i, bit) = do
                                     , cellPorts = M.empty
                                     , cellPortOrder = []
                                     , cellAttrs = netAttrs'
+                                    , cellAttrOrder = []
                                     , cellParams = M.empty
+                                    , cellParamOrder = []
                                     , cellBel = Nothing
                                     , cellBelStrength = StrengthNone
                                     , cellCluster = emptyId
@@ -636,14 +651,14 @@ importPortBit tbl pname dir width acc (i, bit) = do
                                 portId <- intern tbl "O"
                                 let d2 = setCellPort iobufId portId PortOut d1
                                     d3 = connectPort iobufId portId netId d2
-                                    d4 = d3{designPorts = M.insert (iobufId) netId (designPorts d3)}
+                                    d4 = setTopPort iobufId PortIn netId d3
                                 pure (Right (d4, st1))
                             PortOut -> do
                                 -- the port net drives the obuf input
                                 portId <- intern tbl "I"
                                 let d2 = setCellPort iobufId portId PortIn d1
                                     d3 = connectPort iobufId portId netId d2
-                                    d4 = d3{designPorts = M.insert iobufId netId (designPorts d3)}
+                                    d4 = setTopPort iobufId PortOut netId d3
                                 pure (Right (d4, st1))
                             PortInout -> do
                                 -- bifurcate: split net for the driver side, the
@@ -667,7 +682,7 @@ importPortBit tbl pname dir width acc (i, bit) = do
                                     d4 = connectPort iobufId portI splitNetId d3b
                                     d4b = setCellPort iobufId portO PortOut d4
                                     d5 = connectPort iobufId portO netId d4b
-                                    d6 = d5{designPorts = M.insert iobufId netId (designPorts d5)}
+                                    d6 = setTopPort iobufId PortInout netId d5
                                 pure (Right (d6, st3))
             _ -> pure (Right (d, st))
 

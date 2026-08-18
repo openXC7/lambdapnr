@@ -17,6 +17,12 @@ cross-domain max delays and the slack histogram, byte-comparable with
 the C++ log output.
 -}
 module Lambdapnr.Kernel.TimingReport (
+    netinfoSourceWire,
+    netinfoSinkWires,
+    predictArcDelay,
+    netinfoRouteDelay,
+    netinfoRouteDelayQuad,
+    writeJsonReport,
     ClockEvent (..),
     ClockPair (..),
     SegmentType (..),
@@ -36,10 +42,11 @@ import qualified Data.Text as T
 import Text.Printf (printf)
 import System.IO (hPutStrLn, stderr)
 
-import Lambdapnr.Kernel.Arch (Arch (..), Bel, Loc (..), Pip, Wire)
-import Lambdapnr.Kernel.Delay (ClockConstraint (..), DelayPair (..), DelayQuad (..), DelayT, dqMaxDelay, dqMinDelay)
+import Lambdapnr.Kernel.Arch (Arch (..), Bel, Loc (..), Pip, Wire, getBels, getBelLocation, getBelType)
+import Lambdapnr.Kernel.Delay (ClockConstraint (..), DelayPair (..), DelayQuad (..), DelayT, dqFromDelay, dqMaxDelay, dqMinDelay, dqPlus)
+import Lambdapnr.Kernel.CFormat (formatG)
 import Lambdapnr.Kernel.IdString (IdString, IdTable, emptyId, idByName, idToText, intern)
-import Lambdapnr.Kernel.Netlist (CellInfo, Design (..), NetInfo (..), PipMap (..), PortDir (..), PortInfo (..), PortRef (..), cellBel, cellPorts, cellType, portNet)
+import Lambdapnr.Kernel.Netlist (CellInfo, Design (..), NetInfo (..), PipMap (..), PortDir (..), PortInfo (..), PortRef (..), cellBel, cellPorts, cellType, netAttrs, portNet)
 import Lambdapnr.Kernel.Timing (ClockEdge (..), TimingClockingInfo (..), TimingPortClass (..))
 import Lambdapnr.Kernel.Property (propAsString, propIsString)
 import Lambdapnr.Kernel.TimingAnalyser (
@@ -187,6 +194,49 @@ netinfoRouteDelay arch isGlobalNet cells nets ni u
                                 Just pip ->
                                     let acc' = acc + dqMaxDelay (getPipDelay arch pip) + dqMaxDelay (getWireDelay arch cursor)
                                      in go (getPipSrcWire arch pip) acc'
+
+-- | @Context::getNetinfoRouteDelayQuad@ (the generic walk, with the
+-- ECP5 is_global shortcut): the full min/max rise/fall route quad.
+netinfoRouteDelayQuad ::
+    (Arch a, Ord (Wire a)) =>
+    a ->
+    (NetInfo (Bel a) (Wire a) (Pip a) -> Bool) ->
+    M.Map IdString (CellInfo (Bel a) (Wire a) (Pip a)) ->
+    M.Map IdString (NetInfo (Bel a) (Wire a) (Pip a)) ->
+    NetInfo (Bel a) (Wire a) (Pip a) ->
+    PortRef ->
+    DelayQuad
+netinfoRouteDelayQuad arch isGlobalNet cells nets ni u
+    | isGlobalNet ni = dqFromDelay 0
+    | M.null (netWires ni) = quadOf (predictArcDelay arch cells ni u)
+    | otherwise =
+        case netinfoSourceWire arch cells ni of
+            Nothing -> dqFromDelay 0
+            Just srcWire ->
+                foldl
+                    (merge srcWire)
+                    (DelayQuad (DelayPair maxBound minBound) (DelayPair maxBound minBound))
+                    (netinfoSinkWires arch cells u)
+  where
+    quadOf d = DelayQuad (DelayPair d d) (DelayPair d d)
+    merge srcWire acc Nothing = mergePair acc (quadOf (predictArcDelay arch cells ni u))
+    merge srcWire acc (Just dstWire) =
+        let (reached, delay) = go srcWire dstWire (dqFromDelay 0)
+         in mergePair acc (if reached then delay `dqPlus` getWireDelay arch srcWire else quadOf (predictArcDelay arch cells ni u))
+    go srcWire cursor acc
+        | cursor == srcWire = (True, acc)
+        | otherwise =
+            case M.lookup cursor (netWires ni) of
+                Nothing -> (False, acc)
+                Just pm -> case pmPip pm of
+                    Nothing -> (False, acc)
+                    Just pip ->
+                        let acc' = acc `dqPlus` getPipDelay arch pip `dqPlus` getWireDelay arch cursor
+                         in go srcWire (getPipSrcWire arch pip) acc'
+    mergePair (DelayQuad ra fa) (DelayQuad rb fb) =
+        DelayQuad
+            (DelayPair (min (dpMin ra) (dpMin rb)) (max (dpMax ra) (dpMax rb)))
+            (DelayPair (min (dpMin fa) (dpMin fb)) (max (dpMax fa) (dpMax fb)))
 
 -- ---------------------------------------------------------------------
 -- Report builders
@@ -926,6 +976,107 @@ logTimingResults arch tbl cells nets printPath printFmax printHist warnOnFailure
             ++ (if printFmax then logFmax arch tbl warnOnFailure False result else [])
             ++ (if printHist && not (M.null (trSlackHistogram result)) then logHistogram result else [])
         )
+
+-- | @writeJsonReport@ (report.cc): the timing report JSON (json11 dump
+-- format: sorted object keys, %.17g numbers, standard string escapes).
+writeJsonReport ::
+    (Arch a, Ord (Wire a)) =>
+    a ->
+    IdTable ->
+    M.Map IdString (CellInfo (Bel a) (Wire a) (Pip a)) ->
+    M.Map IdString (NetInfo (Bel a) (Wire a) (Pip a)) ->
+    TimingResult ->
+    IO String
+writeJsonReport arch tbl cells nets result = do
+    _ <- intern tbl "$async$"
+    let asyncId = -- the interned id (empty check below handles <async>)
+            emptyId
+        -- the C++ dict iterates clock_paths in reverse insertion order
+        clockPathEntries =
+            [ (clockEventNameS asyncId (cpStart (pathClockPair report)), clockEventNameS asyncId (cpEnd (pathClockPair report)), report)
+            | (_, report) <- reverse (trClockPaths result)
+            ]
+        xclockPathEntries =
+            [ (clockEventNameS asyncId (cpStart (pathClockPair report)), clockEventNameS asyncId (cpEnd (pathClockPair report)), report)
+            | report <- trXclockPaths result
+            ]
+        pathsS =
+            "[" ++ intercalateComma (map critPathJson (clockPathEntries ++ xclockPathEntries)) ++ "]"
+        fmaxPairs = sortBy (\(a, _) (b, _) -> compare (T.unpack (idToText tbl a)) (T.unpack (idToText tbl b))) (M.toList (trClockFmax result))
+        fmaxS =
+            "{" ++ intercalateComma (map fmaxJson fmaxPairs) ++ "}"
+        utilPairs =
+            sortBy (\(a, _) (b, _) -> compare (T.unpack (idToText tbl a)) (T.unpack (idToText tbl b)))
+                [ (t, (used, avail))
+                | (t, avail) <- M.toList availCounts
+                , let used = M.findWithDefault 0 t usedCounts
+                ]
+        utilS = "{" ++ intercalateComma (map utilJson utilPairs) ++ "}"
+     in pure $
+            "{\"critical_paths\": " ++ pathsS ++ ", \"fmax\": " ++ fmaxS ++ ", \"utilization\": " ++ utilS ++ "}\n"
+  where
+    idT = T.unpack . idToText tbl
+    usedCounts = M.fromListWith (+) [ (cellType ci, 1 :: Int) | ci <- M.elems cells ]
+    availCounts = M.fromListWith (+) [ (getBelType arch b, 1 :: Int) | b <- getBels arch ]
+    clockEventNameS _ e
+        | ceClock e == emptyId = "<async>"
+        | otherwise = (if ceEdge e == FallingEdge then "negedge " else "posedge ") ++ idT (ceClock e)
+    critPathJson (fromS, toS, report) =
+        "{\"from\": " ++ jsonString fromS
+            ++ ", \"path\": [" ++ intercalateComma (map segmentJson (pathSegments report)) ++ "]"
+            ++ ", \"to\": " ++ jsonString toS
+            ++ "}"
+    segmentJson seg =
+        let (fc, fp) = segFrom seg
+            (tc, tp) = segTo seg
+            fromLoc = locOf fc
+            toLoc = locOf tc
+            base =
+                "{\"delay\": " ++ formatG 17 (getDelayNS arch (segDelay seg))
+                    ++ ", \"from\": {\"cell\": " ++ jsonString (idT fc) ++ ", \"loc\": [" ++ show (locX' fromLoc) ++ ", " ++ show (locY' fromLoc) ++ "], \"port\": " ++ jsonString (idT fp) ++ "}"
+         in base
+                -- json11 object keys are sorted: delay, from, net,
+                -- sources, to, type
+                ++ ( case segType seg of
+                        SegRouting ->
+                            ", \"net\": " ++ jsonString (idT (segNet seg))
+                                ++ ", \"sources\": [" ++ intercalateComma (map jsonString (netSourcesOf (segNet seg))) ++ "]"
+                        _ -> ""
+                   )
+                ++ ", \"to\": {\"cell\": " ++ jsonString (idT tc) ++ ", \"loc\": [" ++ show (locX' toLoc) ++ ", " ++ show (locY' toLoc) ++ "], \"port\": " ++ jsonString (idT tp) ++ "}"
+                ++ ", \"type\": " ++ jsonString (segmentTypeStr (segType seg))
+                ++ "}"
+    locOf c = getBelLocation arch (fromMaybe (error "report json: unplaced cell") (cellBel (cells M.! c)))
+    locX' (Loc x _ _) = x
+    locY' (Loc _ y _) = y
+    netSourcesOf n =
+        case M.lookup n nets >>= \ni -> M.lookup srcId (netAttrs ni) of
+            Just p | propIsString p -> map T.unpack (T.splitOn "|" (propAsString p))
+            _ -> []
+    srcId = fromMaybe emptyId (idByName tbl "src")
+    fmaxJson (clk, (achieved, constraint)) =
+        jsonString (idT clk) ++ ": {\"achieved\": " ++ formatG 17 achieved ++ ", \"constraint\": " ++ formatG 17 constraint ++ "}"
+    utilJson (t, (used, avail)) =
+        jsonString (idT t) ++ ": {\"available\": " ++ show avail ++ ", \"used\": " ++ show used ++ "}"
+    jsonString s' =
+        "\""
+            ++ concatMap jsonEsc s'
+            ++ "\""
+    jsonEsc c = case c of
+        '\\' -> "\\\\"
+        '"' -> "\\\""
+        '\b' -> "\\b"
+        '\f' -> "\\f"
+        '\n' -> "\\n"
+        '\r' -> "\\r"
+        '\t' -> "\\t"
+        _ | fromEnum c <= 0x1f -> "\\u" ++ pad4 (showHex (fromEnum c) "")
+          | otherwise -> [c]
+    pad4 h = replicate (4 - length h) '0' ++ h
+    intercalateComma [] = ""
+    intercalateComma xs = foldr1 (\a b -> a ++ ", " ++ b) xs
+    showHex n acc = if n == 0 then (if null acc then "0" else acc) else showHex (n `div` 16) (hexDigit (n `mod` 16) : acc)
+    hexDigit d = "0123456789abcdef" !! d
 
 -- | @print_utilisation@: the post-pack device utilisation table.
 -- The C++ counts cells by their TYPE's bucket (@getBelBucketForCellType@,

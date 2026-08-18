@@ -23,6 +23,7 @@ module Lambdapnr.Kernel.IdString (
     idToStr,
     idByName,
     idFromIndex,
+    idTableSize,
     emptyId,
     tableSlice,
 ) where
@@ -67,6 +68,11 @@ intern (IdTable ref) t = atomicModifyIORef' ref $ \(m, v) ->
         Nothing ->
             let i = M.size m
              in ((M.insert t i m, IM.insert i t v), IdString i)
+
+-- | The current number of interned strings (the C++
+-- @idstring_idx_to_str->size()@).
+idTableSize :: IdTable -> IO Int
+idTableSize (IdTable ref) = M.size . fst <$> readIORef ref
 
 -- | 'intern' over 'String'.
 internStr :: IdTable -> String -> IO IdString

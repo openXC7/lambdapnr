@@ -38,13 +38,15 @@ import Data.Maybe (fromMaybe, isJust)
 import Lambdapnr.Kernel.Arch (getBelName, getChipName)
 import Lambdapnr.Kernel.Checksum (checksum, checksumCell, checksumNet)
 import Lambdapnr.Kernel.ArchCheck (archcheck)
-import Lambdapnr.Kernel.Context (Context (..), newContextWith)
+import Lambdapnr.Kernel.Context (Context (..), newContextWith, setCtxAttr)
 import Lambdapnr.Kernel.JsonFrontend (loadJsonDesign)
 import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, NetInfo (..), PipMap (..), PlaceStrength, PortInfo (..), PortRef (..), cellAttrs, cellBel, cellBelStrength, cellName, cellParams, cellPorts, cellType, cellsIter, designCellOrder, designCells, designNetOrder, designNets, netAttrs, netDriver, netName, netUsers, netsIter, portNet, portType, prCell, prPort)
 import Lambdapnr.Kernel.DeterministicRng (Rng, rngFromState, rngState)
 import Lambdapnr.Kernel.Delay (ClockConstraint)
-import Lambdapnr.Kernel.Property (Property (..), propAsInt64, propAsString, propIsString)
-import Lambdapnr.Kernel.TimingReport (logTimingResults, printUtilisation, timingAnalysisReport)
+import Lambdapnr.Kernel.Property (Property (..), propAsInt64, propAsString, propFromInt, propIsString)
+import Lambdapnr.Kernel.TimingReport (logTimingResults, printUtilisation, timingAnalysisReport, writeJsonReport)
+import Lambdapnr.Kernel.JsonWrite (writeJsonFile)
+import Lambdapnr.Kernel.Sdf (writeSdf)
 import qualified Data.Vector as V
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
@@ -54,12 +56,21 @@ import Data.Int (Int16, Int32)
 import Data.Word (Word64)
 import Lambdapnr.Kernel.IdString (IdString (..), IdTable, emptyId, idToText, intern)
 
--- | @setting<float>@: read a numeric setting (@Property::as_double@).
+-- | @setting<double>@: read a numeric setting (@Property::as_double@).
 settingDouble :: M.Map IdString Property -> IdString -> Double -> Double
 settingDouble settings' key def =
     case M.lookup key settings' of
         Nothing -> def
         Just p -> if propIsString p then read (T.unpack (propAsString p)) else fromIntegral (propAsInt64 p)
+
+-- | A flow setting insert (the C++ @ctx->settings[id] = value@ at the
+-- stage points): interns the name, records the insertion order. The
+-- order list mirrors the C++ settings dict (the writer iterates its
+-- reverse).
+insSett :: IdTable -> (M.Map IdString Property, [IdString]) -> Text -> Property -> IO (M.Map IdString Property, [IdString])
+insSett tbl (m, ord) name p = do
+    key <- intern tbl name
+    pure (M.insert key p m, if M.member key m then ord else ord ++ [key])
 
 -- | The serialized property string (C++ @Property::str@).
 propStrD :: Property -> Text
@@ -206,8 +217,10 @@ runFlow prog opts = case checkSingleDevice opts of
                                             r <- loadJsonDesign (ctxIdTable ctx') Nothing jsrc
                                             case r of
                                                 Left err -> die prog err
-                                                Right d -> do
-                                                    (settings', d', clkConstrs) <- applyLpfs prog arch opts (ctxSettings ctx') d
+                                                Right (d, topAttrs) -> do
+                                                    ctxA <- foldM (\c (k, v) -> setCtxAttr c k v) ctx' topAttrs
+                                                    (settings0, sOrd0) <- insSett (ctxIdTable ctxA) (ctxSettings ctxA, ctxSettingsOrder ctxA) "synth" (propFromInt 1 32)
+                                                    (settings', sOrd1, d', clkConstrs) <- applyLpfs prog arch opts settings0 sOrd0 d
                                                     reportDesign prog jsonFile d'
                                                     hPutStrLn stderr "Packing design..."
                                                     pk <- packDesign arch d' ("verbose" `elem` map fst opts) settings' clkConstrs
@@ -226,6 +239,9 @@ runFlow prog opts = case checkSingleDevice opts of
                                                             dPacked
                                                     hPutStrLn stderr (printf "Checksum: 0x%08x" cksum)
                                                     _ <- evaluate (designCells dPacked)
+                                                    -- pack.cc tail: assignArchInfo -> settings[id_pack] = 1
+                                                    -- -> archInfoToAttributes
+                                                    (settingsPk, sOrdPk) <- insSett (ctxIdTable ctx') (settings', sOrd1) "pack" (propFromInt 1 32)
                                                     -- Arch::pack() tail: archInfoToAttributes() (after the
                                                     -- checksum print, mirroring pack.cc:3035-3038)
                                                     dPackedAttr <- archInfoToAttributes arch dPacked
@@ -235,6 +251,17 @@ runFlow prog opts = case checkSingleDevice opts of
                                                     -- placer stage 1: constraints + seed + initial HPWL
                                                     hPutStrLn stderr (printf "LPDBG rngstate %016x" (rngState (ctxRng ctx')))
                                                     let cidOfT = \t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))
+                                                    -- placer settings inserts (the C++ HeAP/SAPlacer config
+                                                    -- constructors read setting<>(name, default), which
+                                                    -- INSERTS the default into ctx->settings): HeAP first,
+                                                    -- then placer1, in the C++ constructor field order
+                                                    (settingsPl1, sOrdPl1) <- insSett (ctxIdTable ctx') (settingsPk, sOrdPk) "placerHeap/parallelRefine" (PropStr "0")
+                                                    (settingsPl2, sOrdPl2) <- insSett (ctxIdTable ctx') (settingsPl1, sOrdPl1) "placerHeap/netShareWeight" (PropStr "0.000000")
+                                                    (settingsPl3, sOrdPl3) <- insSett (ctxIdTable ctx') (settingsPl2, sOrdPl2) "placerHeap/cellPlacementTimeout" (PropStr "8")
+                                                    (settingsPl4, sOrdPl4) <- insSett (ctxIdTable ctx') (settingsPl3, sOrdPl3) "placer1/constraintWeight" (PropStr "10.000000")
+                                                    (settingsPl5, sOrdPl5) <- insSett (ctxIdTable ctx') (settingsPl4, sOrdPl4) "placer1/netShareWeight" (PropStr "0.000000")
+                                                    (settingsPl6, sOrdPl6) <- insSett (ctxIdTable ctx') (settingsPl5, sOrdPl5) "placer1/minBelsForGridPick" (PropStr "64")
+                                                    (settingsPl7, sOrdPl7) <- insSett (ctxIdTable ctx') (settingsPl6, sOrdPl6) "placer1/startTemp" (PropStr "1.000000")
                                                     -- LP_ROUTE_RESUME: skip the whole placer on reruns by
                                                     -- loading the post-place state (RNG + bel bindings)
                                                     -- written by LP_PLACE_SAVE.
@@ -285,6 +312,8 @@ runFlow prog opts = case checkSingleDevice opts of
                                                                         writeFile f (unlines (cellLns ++ netLns))
                                                                     Nothing -> pure ()
                                                                 pure (arch3x, dRefinedx, rngRefinedx)
+                                                    -- arch.cc Arch::place() tail: settings[id_place] = 1
+                                                    (settingsPlace, sOrdPlace) <- insSett (ctxIdTable ctx') (settingsPl7, sOrdPl7) "place" (propFromInt 1 32)
                                                     -- SAPlacer::place() tail: timing_analysis() before the
                                                     -- placer1 checksum print (default args: fmax + histogram,
                                                     -- no critical paths).
@@ -310,6 +339,14 @@ runFlow prog opts = case checkSingleDevice opts of
                                                     -- -> router1 (mirroring arch.cc:686-708; the tail
                                                     -- archInfoToAttributes is checksum-invisible here and skipped)
                                                     hPutStrLn stderr "Routing.."
+                                                    -- Arch::route() start: setting<bool>("arch.disable_router_lutperm", false)
+                                                    (settingsRt0, sOrdRt0) <- insSett (ctxIdTable ctx') (settingsPlace, sOrdPlace) "arch.disable_router_lutperm" (PropStr "0")
+                                                    -- Router1 constructor config reads (insert the defaults
+                                                    -- in the C++ field order)
+                                                    (settingsRt1, sOrdRt1) <- insSett (ctxIdTable ctx') (settingsRt0, sOrdRt0) "router1/maxIterCnt" (PropStr "200")
+                                                    (settingsRt2, sOrdRt2) <- insSett (ctxIdTable ctx') (settingsRt1, sOrdRt1) "router1/cleanupReroute" (PropStr "1")
+                                                    (settingsRt3, sOrdRt3) <- insSett (ctxIdTable ctx') (settingsRt2, sOrdRt2) "router1/fullCleanupReroute" (PropStr "1")
+                                                    (settingsRt4, sOrdRt4) <- insSett (ctxIdTable ctx') (settingsRt3, sOrdRt3) "router1/useEstimate" (PropStr "1")
                                                     let overrides = setupWireLocations arch3 dRefinedAttr
                                                         (archG, dGlobals) = routeEcp5Globals arch3 dRefinedAttr
                                                     gDump <- lookupEnv "LPCHK_ROUTE_GLOBALS"
@@ -323,6 +360,10 @@ runFlow prog opts = case checkSingleDevice opts of
                                                         Just _ -> die prog "stopped after globals routing (LAMBDAPNR_GLOBALS_STOP)"
                                                         Nothing -> pure ()
                                                     (arch4, dRouted, rngRouted) <- routeRouter1 archG cidOfT overrides (pkGsrclkWire pk) dGlobals rngRefined
+                                                    -- Router1::route(): setting<bool>("router/tmg_ripup", false),
+                                                    -- then arch.cc Arch::route() tail settings[id_route] = 1
+                                                    (settingsRt5, sOrdRt5) <- insSett (ctxIdTable ctx') (settingsRt4, sOrdRt4) "router/tmg_ripup" (PropStr "0")
+                                                    (settingsRt6, sOrdRt6) <- insSett (ctxIdTable ctx') (settingsRt5, sOrdRt5) "route" (propFromInt 1 32)
                                                     let cksum3 =
                                                             checksum
                                                                 (fromIntegral . belIdx)
@@ -373,8 +414,28 @@ runFlow prog opts = case checkSingleDevice opts of
                                                         Nothing -> pure ()
                                                     case lookup "textcfg" opts of
                                                         Just (Just cfgFile) -> do
-                                                            let cc = buildConfig arch4 ai dRouted settings'
+                                                            let cc = buildConfig arch4 ai dRouted settingsRt6
                                                             TIO.writeFile cfgFile (renderChipConfig cc)
+                                                        _ -> pure ()
+                                                    -- command.cc executeMain tail: --write -> --sdf ->
+                                                    -- --report, after customBitstream
+                                                    -- Arch::route() tail: settings[id_route] = 1 then
+                                                    -- archInfoToAttributes (sets the real ROUTING strings)
+                                                    dRoutedAttr <- archInfoToAttributes arch4 dRouted
+                                                    case lookup "write" opts of
+                                                        Just (Just writeFile') -> do
+                                                            js <- writeJsonFile (ctxIdTable ctx') (settingsRt6, sOrdRt6) (ctxAttrs ctxA, ctxAttrOrder ctxA) dRoutedAttr
+                                                            writeFile writeFile' js
+                                                        _ -> pure ()
+                                                    case lookup "sdf" opts of
+                                                        Just (Just sdfFile) -> do
+                                                            sdfTxt <- writeSdf arch4 (ctxIdTable ctx') (ctxAttrs ctxA) ("sdf-cvc" `elem` map fst opts) (getPortTimingClassAi dbR aiR) (getPortClockingInfoAi dbR aiR) (getCellDelayAi dbR aiR) isGlobalR dRoutedAttr
+                                                            writeFile sdfFile sdfTxt
+                                                        _ -> pure ()
+                                                    case lookup "report" opts of
+                                                        Just (Just reportFile) -> do
+                                                            rep <- writeJsonReport arch4 (ctxIdTable ctx') (designCells dRoutedAttr) (designNets dRoutedAttr) routeReport
+                                                            writeFile reportFile rep
                                                         _ -> pure ()
                                                     -- CommandHandler::exec() tail: printFooter (empty: 0
                                                     -- warnings/errors) + log_break + the final line
@@ -389,25 +450,25 @@ runFlow prog opts = case checkSingleDevice opts of
 -- order (short-circuit) — that interning is part of the contract.
 -- The third component is the FREQUENCY-derived clock-constraint map
 -- (net name -> constraint), the @NetInfo::clkconstr@ equivalent.
-applyLpfs :: String -> Ecp5 -> [(String, Maybe String)] -> M.Map IdString Property -> Design BelId WireId PipId -> IO (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint)
-applyLpfs prog arch opts settings d =
+applyLpfs :: String -> Ecp5 -> [(String, Maybe String)] -> M.Map IdString Property -> [IdString] -> Design BelId WireId PipId -> IO (M.Map IdString Property, [IdString], Design BelId WireId PipId, M.Map IdString ClockConstraint)
+applyLpfs prog arch opts settings settingsOrd d =
     case [f | ("lpf", Just f) <- opts] of
-        [] -> pure (settings, d, M.empty)
+        [] -> pure (settings, settingsOrd, d, M.empty)
         files -> do
-            (st, d', ccs) <- foldM (applyOne prog arch) (settings, d, M.empty) files
+            (st, sOrd, d', ccs) <- foldM (applyOne prog arch) (settings, settingsOrd, d, M.empty) files
             _ <- checkIoConstrained prog arch opts d'
-            pure (st, d', ccs)
+            pure (st, sOrd, d', ccs)
   where
-    applyOne :: String -> Ecp5 -> (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint) -> FilePath -> IO (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint)
-    applyOne prog arch (st, d, ccs) file = do
+    applyOne :: String -> Ecp5 -> (M.Map IdString Property, [IdString], Design BelId WireId PipId, M.Map IdString ClockConstraint) -> FilePath -> IO (M.Map IdString Property, [IdString], Design BelId WireId PipId, M.Map IdString ClockConstraint)
+    applyOne prog arch (st, sOrd, d, ccs) file = do
         lsrc <- try (TIO.readFile file) :: IO (Either SomeException Text)
         case lsrc of
             Left _ -> die prog ("failed to open LPF file '" ++ file ++ "'")
             Right contents -> do
-                r <- applyLpf arch (T.pack file) contents st d
+                r <- applyLpf arch (T.pack file) contents st sOrd d
                 case r of
                     Left err -> die prog ("failed to parse LPF file '" ++ file ++ "': " ++ err)
-                    Right (st', d', cc') -> pure (st', d', M.union cc' ccs)
+                    Right (st', sOrd', d', cc') -> pure (st', sOrd', d', M.union cc' ccs)
 
 -- | The unconstrained-IO check loop of @customAfterLoad@.
 checkIoConstrained :: String -> Ecp5 -> [(String, Maybe String)] -> Design BelId WireId PipId -> IO ()

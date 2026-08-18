@@ -54,6 +54,7 @@ module Lambdapnr.Kernel.Netlist (
     swapRemovePort,
     setTopPort,
     getTopPortNet,
+    getTopPortDir,
     setCellConstr,
     setCellCluster,
     setCellChildren,
@@ -120,14 +121,30 @@ setNetWire :: (Ord wire) => IdString -> wire -> Maybe pip -> PlaceStrength -> De
 setNetWire net wire pip strength d =
     case M.lookup net (designNets d) of
         Nothing -> d
-        Just ni -> d{designNets = M.insert net (ni{netWires = M.insert wire (PipMap pip strength) (netWires ni)}) (designNets d)}
+        Just ni ->
+            d
+                { designNets =
+                    M.insert
+                        net
+                        ( ni
+                            { netWires = M.insert wire (PipMap pip strength) (netWires ni)
+                            , netWireOrder = if M.member wire (netWires ni) then netWireOrder ni else netWireOrder ni ++ [wire]
+                            }
+                        )
+                        (designNets d)
+                }
 
--- | Remove a wire from a net's wires map (@net->wires.erase(wire)@).
+-- | Remove a wire from a net's wires map (@net->wires.erase(wire)@; the
+-- C++ dict swap-erases).
 removeNetWire :: (Ord wire) => IdString -> wire -> Design bel wire pip -> Design bel wire pip
 removeNetWire net wire d =
     case M.lookup net (designNets d) of
         Nothing -> d
-        Just ni -> d{designNets = M.insert net (ni{netWires = M.delete wire (netWires ni)}) (designNets d)}
+        Just ni ->
+            d
+                { designNets =
+                    M.insert net (ni{netWires = M.delete wire (netWires ni), netWireOrder = swapRemovePort wire (netWireOrder ni)}) (designNets d)
+                }
 
 {- | Port direction. The 'Enum' order matches the C++ @PortType@
 (@PORT_IN = 0, PORT_OUT = 1, PORT_INOUT = 2@) — it is part of the
@@ -176,7 +193,12 @@ data NetInfo bel wire pip = NetInfo
     , netUserFree :: ![Int]
     , netWires :: !(Map wire (PipMap pip))
     -- ^ wire -> uphill pip
+    , netWireOrder :: ![wire]
+    -- ^ wire insertion order (the C++ @net->wires@ dict iterates its
+    -- reverse)
     , netAttrs :: !(Map IdString Property)
+    , netAttrOrder :: ![IdString]
+    -- ^ attr insertion order (the C++ @dict@ iterates its reverse)
     , netConstantValue :: !IdString
     }
     deriving (Eq, Show)
@@ -191,7 +213,11 @@ data CellInfo bel wire pip = CellInfo
     -- ^ Port insertion order, mirroring nextpnr's @dict@ container
     -- (iteration order is the reverse of this list)
     , cellAttrs :: !(Map IdString Property)
+    , cellAttrOrder :: ![IdString]
+    -- ^ attr insertion order (the C++ @dict@ iterates its reverse)
     , cellParams :: !(Map IdString Property)
+    , cellParamOrder :: ![IdString]
+    -- ^ param insertion order (the C++ @dict@ iterates its reverse)
     , cellBel :: !(Maybe bel)
     , cellBelStrength :: !PlaceStrength
     , cellCluster :: !IdString
@@ -212,6 +238,10 @@ data Design bel wire pip = Design
     , designCells :: !(Map IdString (CellInfo bel wire pip))
     , designPorts :: !(Map IdString IdString)
     -- ^ top-level port name -> top-level net name
+    , designPortDirs :: !(Map IdString PortDir)
+    -- ^ top-level port name -> direction
+    , designPortOrder :: ![IdString]
+    -- ^ port insertion order (the C++ @ctx->ports@ iterates its reverse)
     , designCellOrder :: ![IdString]
     -- ^ cell insertion order (the C++ dict iterates this in REVERSE,
     -- with swap-erase on removal); pack passes iterate that way
@@ -221,19 +251,21 @@ data Design bel wire pip = Design
     deriving (Eq, Show)
 
 emptyDesign :: Design bel wire pip
-emptyDesign = Design M.empty M.empty M.empty [] []
+emptyDesign = Design M.empty M.empty M.empty M.empty [] [] []
 
 -- | Left-biased merge (fresh entries win), used by the frontend when
 -- splicing newly created nets/cells into the design.
 instance Semigroup (Design bel wire pip) where
-    Design a b p oo no <> Design c d q rr nr =
+    Design a b p pd po oo no <> Design c d q qd qo rr nr =
         Design
             (M.union a c)
             (M.union b d)
             (M.union p q)
+            (M.union pd qd)
             -- the fresh (first) entries are created after the second's;
             -- they keep the second's positions when replacing, and the
             -- genuinely new ones append at the END of the order
+            (qo ++ filter (\n -> not (M.member n q)) po)
             (rr ++ filter (\n -> not (M.member n d)) oo)
             (nr ++ filter (\n -> not (M.member n c)) no)
 
@@ -247,12 +279,21 @@ lookupNet :: IdString -> Design bel wire pip -> Maybe (NetInfo bel wire pip)
 lookupNet n = M.lookup n . designNets
 
 -- | Set the top-level net for a top port (@ctx->ports[name].net@).
-setTopPort :: IdString -> IdString -> Design bel wire pip -> Design bel wire pip
-setTopPort port net d = d{designPorts = M.insert port net (designPorts d)}
+setTopPort :: IdString -> PortDir -> IdString -> Design bel wire pip -> Design bel wire pip
+setTopPort port dir net d =
+    d
+        { designPorts = M.insert port net (designPorts d)
+        , designPortDirs = M.insert port dir (designPortDirs d)
+        , designPortOrder = if M.member port (designPorts d) then designPortOrder d else designPortOrder d ++ [port]
+        }
 
 -- | The top-level net for a top port, if any.
 getTopPortNet :: IdString -> Design bel wire pip -> Maybe IdString
 getTopPortNet port d = M.lookup port (designPorts d)
+
+-- | The direction of a top port (the C++ @PortInfo::type@).
+getTopPortDir :: IdString -> Design bel wire pip -> Maybe PortDir
+getTopPortDir port d = M.lookup port (designPortDirs d)
 
 -- | Insert (or replace) a cell.
 addCell :: IdString -> CellInfo bel wire pip -> Design bel wire pip -> Design bel wire pip
@@ -351,7 +392,7 @@ connectPort cell port net d =
                             _ ->
                                 let ni =
                                         M.findWithDefault
-                                            (NetInfo net emptyIdString (PortRef Nothing port) V.empty [] M.empty M.empty emptyIdString)
+                                            (NetInfo net emptyIdString (PortRef Nothing port) V.empty [] M.empty [] M.empty [] emptyIdString)
                                             net
                                             (designNets d1)
                                     (slots, idx) =
@@ -419,35 +460,77 @@ setCellParam :: IdString -> IdString -> Property -> Design bel wire pip -> Desig
 setCellParam cell key value d =
     case M.lookup cell (designCells d) of
         Nothing -> d
-        Just ci -> d{designCells = M.insert cell (ci{cellParams = M.insert key value (cellParams ci)}) (designCells d)}
+        Just ci ->
+            d
+                { designCells =
+                    M.insert
+                        cell
+                        ( ci
+                            { cellParams = M.insert key value (cellParams ci)
+                            , cellParamOrder = if M.member key (cellParams ci) then cellParamOrder ci else cellParamOrder ci ++ [key]
+                            }
+                        )
+                        (designCells d)
+                }
 
--- | Delete a cell parameter (@ci->params.erase(key)@).
+-- | Delete a cell parameter (@ci->params.erase(key)@; the C++ dict
+-- swap-erases, so the back entry moves into the freed slot).
 delCellParam :: IdString -> IdString -> Design bel wire pip -> Design bel wire pip
 delCellParam cell key d =
     case M.lookup cell (designCells d) of
         Nothing -> d
-        Just ci -> d{designCells = M.insert cell (ci{cellParams = M.delete key (cellParams ci)}) (designCells d)}
+        Just ci ->
+            d
+                { designCells =
+                    M.insert cell (ci{cellParams = M.delete key (cellParams ci), cellParamOrder = swapRemovePort key (cellParamOrder ci)}) (designCells d)
+                }
 
 -- | Set a cell attribute (@ci->attrs[key] = value@).
 setCellAttr :: IdString -> IdString -> Property -> Design bel wire pip -> Design bel wire pip
 setCellAttr cell key value d =
     case M.lookup cell (designCells d) of
         Nothing -> d
-        Just ci -> d{designCells = M.insert cell (ci{cellAttrs = M.insert key value (cellAttrs ci)}) (designCells d)}
+        Just ci ->
+            d
+                { designCells =
+                    M.insert
+                        cell
+                        ( ci
+                            { cellAttrs = M.insert key value (cellAttrs ci)
+                            , cellAttrOrder = if M.member key (cellAttrs ci) then cellAttrOrder ci else cellAttrOrder ci ++ [key]
+                            }
+                        )
+                        (designCells d)
+                }
 
 -- | @ci->attrs.erase(key)@.
 delCellAttr :: IdString -> IdString -> Design bel wire pip -> Design bel wire pip
 delCellAttr cell key d =
     case M.lookup cell (designCells d) of
         Nothing -> d
-        Just ci -> d{designCells = M.insert cell (ci{cellAttrs = M.delete key (cellAttrs ci)}) (designCells d)}
+        Just ci ->
+            d
+                { designCells =
+                    M.insert cell (ci{cellAttrs = M.delete key (cellAttrs ci), cellAttrOrder = swapRemovePort key (cellAttrOrder ci)}) (designCells d)
+                }
 
 -- | @ni->attrs[key] = value@ (mirrors the C++ @dict operator[]@ insert-or-overwrite).
 setNetAttr :: IdString -> IdString -> Property -> Design bel wire pip -> Design bel wire pip
 setNetAttr net key value d =
     case M.lookup net (designNets d) of
         Nothing -> d
-        Just ni -> d{designNets = M.insert net (ni{netAttrs = M.insert key value (netAttrs ni)}) (designNets d)}
+        Just ni ->
+            d
+                { designNets =
+                    M.insert
+                        net
+                        ( ni
+                            { netAttrs = M.insert key value (netAttrs ni)
+                            , netAttrOrder = if M.member key (netAttrs ni) then netAttrOrder ni else netAttrOrder ni ++ [key]
+                            }
+                        )
+                        (designNets d)
+                }
 
 -- | @dict@-erase order update: the back entry moves into the erased slot.
 swapRemovePort :: (Eq a) => a -> [a] -> [a]

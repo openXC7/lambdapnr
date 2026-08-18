@@ -40,7 +40,7 @@ loadArch = do
 -- | A minimal design with one empty net @n1@.
 testDesign :: Design BelId WireId PipId
 testDesign =
-  addNet emptyId (NetInfo emptyId emptyId (PortRef Nothing emptyId) V.empty [] M.empty M.empty emptyId) emptyDesign
+  addNet emptyId (NetInfo emptyId emptyId (PortRef Nothing emptyId) V.empty [] M.empty [] M.empty [] emptyId) emptyDesign
 
 -- | A pip whose timing class has a nonzero fanout adder (deterministic
 -- chipdb order).
@@ -152,7 +152,9 @@ ecp5BindingTests =
                     , cellPorts = M.empty
                     , cellPortOrder = []
                     , cellAttrs = M.empty
+                    , cellAttrOrder = []
                     , cellParams = M.empty
+                    , cellParamOrder = []
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
                     , cellCluster = emptyId
@@ -206,7 +208,9 @@ ecp5BindingTests =
                     , cellPorts = M.fromList [(cid' "A", mkPort "A"), (cid' "B", mkPort "B"), (cid' "C", mkPort "C"), (cid' "D", mkPort "D"), (cid' "FCI", mkPort "FCI"), (cid' "F", mkPort "F")]
                     , cellPortOrder = map cid' ["A", "B", "C", "D", "FCI", "F"]
                     , cellAttrs = M.empty
+                    , cellAttrOrder = []
                     , cellParams = M.empty
+                    , cellParamOrder = []
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
                     , cellCluster = emptyId
@@ -225,7 +229,9 @@ ecp5BindingTests =
                     , cellPorts = M.fromList [(cid' "CLK", mkPort "CLK"), (cid' "DI", mkPort "DI"), (cid' "Q", mkPort "Q")]
                     , cellPortOrder = map cid' ["CLK", "DI", "Q"]
                     , cellAttrs = M.empty
+                    , cellAttrOrder = []
                     , cellParams = M.empty
+                    , cellParamOrder = []
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
                     , cellCluster = emptyId
@@ -255,7 +261,9 @@ ecp5BindingTests =
                     , cellPorts = M.empty
                     , cellPortOrder = []
                     , cellAttrs = M.empty
+                    , cellAttrOrder = []
                     , cellParams = M.empty
+                    , cellParamOrder = []
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
                     , cellCluster = emptyId
@@ -273,7 +281,9 @@ ecp5BindingTests =
                     , cellPorts = M.empty
                     , cellPortOrder = []
                     , cellAttrs = M.empty
+                    , cellAttrOrder = []
                     , cellParams = M.empty
+                    , cellParamOrder = []
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
                     , cellCluster = emptyId
@@ -298,7 +308,9 @@ ecp5BindingTests =
                     , cellPorts = M.empty
                     , cellPortOrder = []
                     , cellAttrs = M.empty
+                    , cellAttrOrder = []
                     , cellParams = M.empty
+                    , cellParamOrder = []
                     , cellBel = Nothing
                     , cellBelStrength = StrengthNone
                     , cellCluster = emptyId

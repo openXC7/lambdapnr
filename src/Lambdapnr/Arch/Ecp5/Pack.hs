@@ -30,6 +30,7 @@ module Lambdapnr.Arch.Ecp5.Pack (
 import Control.Monad (foldM, when)
 import Data.Function ((&))
 import Data.List (maximumBy, sortBy, sortOn)
+import qualified Data.List
 import System.IO (hPutStrLn, stderr)
 import Data.Bits (complement, (.&.), (.|.), shiftL, shiftR)
 import Data.Int (Int64)
@@ -47,7 +48,7 @@ import Lambdapnr.Arch.Ecp5.ArchCellInfo
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
 import Lambdapnr.Arch.Ecp5.Chipdb
 import Lambdapnr.Arch.Ecp5.Types
-import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelByName, getBelGlobalBuf, getBelLocation, getBelName, getBelPins, getBelPinType, getBelPinWire, getBels, getBelType, getDelayFromNS, getDelayNS, getPipDstWire, getPipSrcWire, getPipsDownhill, getPipsUphill)
+import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelByName, getBelGlobalBuf, getBelLocation, getBelName, getBelPins, getBelPinType, getBelPinWire, getBels, getBelType, getDelayFromNS, getDelayNS, getPipDstWire, getPipName, getPipSrcWire, getPipsDownhill, getPipsUphill, getWireName)
 import Lambdapnr.Kernel.Delay (ClockConstraint (..), DelayPair (..))
 import Lambdapnr.Kernel.IdString (IdString (..), emptyId, idToText)
 import Lambdapnr.Kernel.IdString (intern)
@@ -319,20 +320,22 @@ cellTemplate pk typ =
         mkOut p = (cid pk p, PortInfo (cid pk p) Nothing PortOut 0)
         mkInout p = (cid pk p, PortInfo (cid pk p) Nothing PortInout 0)
         portsOf = M.fromList
-        cell0 = CellInfo emptyId typ emptyId M.empty [] M.empty M.empty Nothing StrengthNone emptyId 0 0 0 False []
-        paramsOf ps = M.fromList [(cid pk k, v) | (k, v) <- ps]
-        attrsOf as = M.fromList [(cid pk k, v) | (k, v) <- as]
+        cell0 = CellInfo emptyId typ emptyId M.empty [] M.empty [] M.empty [] Nothing StrengthNone emptyId 0 0 0 False []
+        paramsOf ps = (M.fromList [(cid pk k, v) | (k, v) <- ps], map (cid pk) (map fst ps))
+        attrsOf as = (M.fromList [(cid pk k, v) | (k, v) <- as], map (cid pk) (map fst as))
      in if tp == "TRELLIS_COMB"
             then
-                ( cell0
-                    { cellParams =
+                let (pm, po) =
                         paramsOf
                             [ ("MODE", PropStr "LOGIC")
                             , ("INITVAL", propFromInt 0 16)
                             , ("CCU2_INJECT1", PropStr "NO")
                             , ("WREMUX", PropStr "WRE")
                             ]
-                    , cellPorts =
+                 in ( cell0
+                        { cellParams = pm
+                        , cellParamOrder = po
+                        , cellPorts =
                         portsOf
                             ( map mkIn ["A", "B", "C", "D", "M", "F1", "FCI", "FXA", "FXB", "DI0", "DI1", "WD", "WAD0", "WAD1", "WAD2", "WAD3", "WRE", "WCK"]
                                 ++ map mkOut ["F", "FCO", "OFX"]
@@ -363,57 +366,65 @@ cellTemplate pk typ =
                     else
                         if tp == "TRELLIS_IO"
                             then
-                                ( cell0
-                                    { cellParams =
+                                let (pm, po) =
                                         paramsOf
                                             [ ("DIR", PropStr "INPUT")
                                             , ("DATAMUX_ODDR", PropStr "PADDO")
                                             , ("DATAMUX_MDDR", PropStr "PADDO")
                                             ]
-                                    , cellAttrs = attrsOf [("IO_TYPE", PropStr "LVCMOS33")]
-                                    , cellPorts =
-                                        portsOf
-                                            ( mkInout "B" : map mkIn ["I", "T"] ++ [mkOut "O"] ++ map mkIn ["IOLDO", "IOLTO"]
-                                            )
-                                    , cellPortOrder = map (cid pk) ["B", "I", "T", "O", "IOLDO", "IOLTO"]
-                                    }
-                                , portsOf (mkInout "B" : map mkIn ["I", "T"] ++ [mkOut "O"] ++ map mkIn ["IOLDO", "IOLTO"])
-                                )
+                                    (am, ao) = attrsOf [("IO_TYPE", PropStr "LVCMOS33")]
+                                 in ( cell0
+                                        { cellParams = pm
+                                        , cellParamOrder = po
+                                        , cellAttrs = am
+                                        , cellAttrOrder = ao
+                                        , cellPorts =
+                                            portsOf
+                                                ( mkInout "B" : map mkIn ["I", "T"] ++ [mkOut "O"] ++ map mkIn ["IOLDO", "IOLTO"]
+                                                )
+                                        , cellPortOrder = map (cid pk) ["B", "I", "T", "O", "IOLDO", "IOLTO"]
+                                        }
+                                    , portsOf (mkInout "B" : map mkIn ["I", "T"] ++ [mkOut "O"] ++ map mkIn ["IOLDO", "IOLTO"])
+                                    )
                             else
                                 if tp == "LUT4"
                                     then
-                                        ( cell0
-                                            { cellParams = paramsOf [("INIT", propFromInt 0 16)]
-                                            , cellPorts = portsOf (map mkIn ["A", "B", "C", "D"] ++ [mkOut "Z"])
-                                            , cellPortOrder = map (cid pk) ["A", "B", "C", "D", "Z"]
-                                            }
-                                        , portsOf (map mkIn ["A", "B", "C", "D"] ++ [mkOut "Z"])
-                                        )
+                                        let (pm, po) = paramsOf [("INIT", propFromInt 0 16)]
+                                         in ( cell0
+                                                { cellParams = pm
+                                                , cellParamOrder = po
+                                                , cellPorts = portsOf (map mkIn ["A", "B", "C", "D"] ++ [mkOut "Z"])
+                                                , cellPortOrder = map (cid pk) ["A", "B", "C", "D", "Z"]
+                                                }
+                                            , portsOf (map mkIn ["A", "B", "C", "D"] ++ [mkOut "Z"])
+                                            )
                                     else
                                         if tp == "CCU2C"
                                             then
-                                                ( cell0
-                                                    { cellParams =
+                                                let (pm, po) =
                                                         paramsOf
                                                             [ ("INIT0", propFromInt 0 16)
                                                             , ("INIT1", propFromInt 0 16)
                                                             , ("INJECT1_0", PropStr "YES")
                                                             , ("INJECT1_1", PropStr "YES")
                                                             ]
-                                                    , cellPorts =
-                                                        portsOf
-                                                            ( mkIn "CIN"
-                                                                : map mkIn ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"]
-                                                                    ++ map mkOut ["S0", "S1", "COUT"]
-                                                            )
-                                                    , cellPortOrder = map (cid pk) (["CIN"] ++ ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"] ++ ["S0", "S1", "COUT"])
-                                                    }
-                                                , portsOf
-                                                    ( mkIn "CIN"
-                                                        : map mkIn ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"]
-                                                            ++ map mkOut ["S0", "S1", "COUT"]
+                                                 in ( cell0
+                                                        { cellParams = pm
+                                                        , cellParamOrder = po
+                                                        , cellPorts =
+                                                            portsOf
+                                                                ( mkIn "CIN"
+                                                                    : map mkIn ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"]
+                                                                        ++ map mkOut ["S0", "S1", "COUT"]
+                                                                )
+                                                        , cellPortOrder = map (cid pk) (["CIN"] ++ ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"] ++ ["S0", "S1", "COUT"])
+                                                        }
+                                                    , portsOf
+                                                        ( mkIn "CIN"
+                                                            : map mkIn ["A0", "B0", "C0", "D0", "A1", "B1", "C1", "D1"]
+                                                                ++ map mkOut ["S0", "S1", "COUT"]
+                                                        )
                                                     )
-                                                )
                                             else
                                                 if tp == "DCCA"
                                                     then
@@ -447,25 +458,24 @@ cellTemplate pk typ =
                                                                             , ("DELAY.DEL_VALUE", propFromInt 0 7)
                                                                             , ("DELAY.WAIT_FOR_EDGE", PropStr "DISABLED")
                                                                             ]
-                                                                    params' =
+                                                                    paramsX =
                                                                         if tp == "IOLOGIC"
                                                                             then
-                                                                                M.union
-                                                                                    ( paramsOf
-                                                                                        [ ("IDDRXN.MODE", PropStr "NONE")
-                                                                                        , ("ODDRXN.MODE", PropStr "NONE")
-                                                                                        , ("MIDDRX.MODE", PropStr "NONE")
-                                                                                        , ("MODDRX.MODE", PropStr "NONE")
-                                                                                        , ("MTDDRX.MODE", PropStr "NONE")
-                                                                                        , ("IOLTOMUX", PropStr "NONE")
-                                                                                        , ("MTDDRX.DQSW_INVERT", PropStr "DISABLED")
-                                                                                        , ("MTDDRX.REGSET", PropStr "RESET")
-                                                                                        , ("MIDDRX_MODDRX.WRCLKMUX", PropStr "NONE")
-                                                                                        ]
-                                                                                    )
-                                                                                    params
-                                                                            else params
-                                                                 in (cell0{cellParams = params', cellPorts = belPorts, cellPortOrder = M.keys belPorts}, belPorts)
+                                                                                paramsOf
+                                                                                    [ ("IDDRXN.MODE", PropStr "NONE")
+                                                                                    , ("ODDRXN.MODE", PropStr "NONE")
+                                                                                    , ("MIDDRX.MODE", PropStr "NONE")
+                                                                                    , ("MODDRX.MODE", PropStr "NONE")
+                                                                                    , ("MTDDRX.MODE", PropStr "NONE")
+                                                                                    , ("IOLTOMUX", PropStr "NONE")
+                                                                                    , ("MTDDRX.DQSW_INVERT", PropStr "DISABLED")
+                                                                                    , ("MTDDRX.REGSET", PropStr "RESET")
+                                                                                    , ("MIDDRX_MODDRX.WRCLKMUX", PropStr "NONE")
+                                                                                    ]
+                                                                            else (M.empty, [])
+                                                                    params' = M.union (fst paramsX) (fst params)
+                                                                    po' = snd params ++ snd paramsX
+                                                                 in (cell0{cellParams = params', cellParamOrder = po', cellPorts = belPorts, cellPortOrder = M.keys belPorts}, belPorts)
                                                             else
                                                                 if tp == "TRELLIS_ECLKBUF"
                                                                     then
@@ -502,11 +512,11 @@ addNew c pk = pk{pkNew = pkNew pk ++ [c]}
 -- | @ctx->createNet@.
 createNet :: Packer -> IdString -> NetInfo BelId WireId PipId
 createNet pk name =
-    NetInfo name emptyId (PortRef Nothing (cid pk "PADDO")) V.empty [] M.empty M.empty emptyId
+    NetInfo name emptyId (PortRef Nothing (cid pk "PADDO")) V.empty [] M.empty [] M.empty [] emptyId
 
 -- | A fresh net with the default (undriven) driver ref.
 freshNetPk :: Packer -> IdString -> NetInfo BelId WireId PipId
-freshNetPk _ name = NetInfo name emptyId (PortRef Nothing emptyId) V.empty [] M.empty M.empty emptyId
+freshNetPk _ name = NetInfo name emptyId (PortRef Nothing emptyId) V.empty [] M.empty [] M.empty [] emptyId
 
 -- | Move a port (rename in place + detach + attach elsewhere) — see
 -- Netlist.moveCellPort.
@@ -621,7 +631,7 @@ packIo pk = do
                     let tn = cellName nxio
                         d0 = addNet tn (freshNetPk pk tn) (pkDesign pk4)
                         d1 = connectPort trioName (cid pk "B") tn d0
-                        d2 = d1{designPorts = M.insert tn tn (designPorts d1)}
+                        d2 = setTopPort tn (maybe PortIn id (getTopPortDir tn d1)) tn d1
                      in pk4{pkDesign = d2}
                 | otherwise = pk4
          in pk5
@@ -1806,8 +1816,7 @@ packDqsbuf pk =
                 markGlobal p port =
                     case getPort (cellOf p (cellName ci)) (cid p port) of
                         Just n ->
-                            let ni = netOf p n
-                             in p{pkDesign = addNet n (ni{netAttrs = M.insert (cid p "ECP5_IS_GLOBAL") (propFromInt 1 32) (netAttrs ni)}) (pkDesign p)}
+                            p{pkDesign = setNetAttr n (cid p "ECP5_IS_GLOBAL") (propFromInt 1 32) (pkDesign p)}
                         Nothing -> p
              in pkB
         | otherwise = pkAcc
@@ -2482,8 +2491,7 @@ insertDcc pk net mdcsCell used =
 -- | Set @ECP5_IS_GLOBAL@ on a net.
 markGlobalNet :: Packer -> IdString -> Packer
 markGlobalNet p netName =
-    let ni = netOf p netName
-     in p{pkDesign = addNet netName (ni{netAttrs = M.insert (cid p "ECP5_IS_GLOBAL") (propFromInt 1 32) (netAttrs ni)}) (pkDesign p)}
+    p{pkDesign = setNetAttr netName (cid p "ECP5_IS_GLOBAL") (propFromInt 1 32) (pkDesign p)}
 
 clearNetUsers :: IdString -> Design BelId WireId PipId -> Design BelId WireId PipId
 clearNetUsers n d =
@@ -2765,7 +2773,19 @@ archInfoToAttributes e d0 = do
     nexpnrBelId <- intern tbl "NEXTPNR_BEL"
     routingId <- intern tbl "ROUTING"
     (d1, _) <- foldM (stepCell belId nexpnrBelId) (d0, Nothing) (cellsIter d0)
-    let stepNet d ni = setNetAttr (netName ni) routingId (PropStr "") d
+    let -- the C++ routing string: per wire (dict order, reverse insertion):
+        -- wireName;pipName;strength — joined with ';'
+        stepNet d ni =
+            let wireStrs =
+                    [ T.unpack (T.intercalate "/" (map (idToText tbl) (getWireName e w)))
+                        ++ ";"
+                        ++ maybe "" (\p -> T.unpack (T.intercalate "/" (map (idToText tbl) (getPipName e p)))) (pmPip (netWires ni M.! w))
+                        ++ ";"
+                        ++ show (fromEnum (pmStrength (netWires ni M.! w)))
+                    | w <- reverse (netWireOrder ni)
+                    ]
+                routing = Data.List.intercalate ";" wireStrs
+             in setNetAttr (netName ni) routingId (PropStr (T.pack routing)) d
         d2 = foldl' stepNet d1 (netsIter d1)
     pure d2
   where
