@@ -69,10 +69,11 @@ import Lambdapnr.Arch.Ecp5.Types (BelId (..), Ecp5Args (..), Ecp5Device (..), Gr
 import Lambdapnr.Kernel.Arch hiding (locX, locY, locZ)
 import Lambdapnr.Kernel.Delay
 import Lambdapnr.Kernel.IdString
-import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, PortDir (..), designCells, setCellAttr)
+import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, PortDir (..), designCells, designNets, getTopPortNet, setCellAttr)
 import Lambdapnr.Kernel.Timing (TimingClockingInfo, TimingPortClass)
 import Lambdapnr.Kernel.Property (Property (..), propFromString)
 import System.IO (hPutStrLn, stderr)
+import Text.Printf (printf)
 
 -- | The ECP5 architecture instance: chipdb + args + interned name ids.
 data Ecp5 = Ecp5
@@ -652,8 +653,8 @@ applyLpf ::
     Text ->
     M.Map IdString Property ->
     Design BelId WireId PipId ->
-    IO (Either String (M.Map IdString Property, Design BelId WireId PipId))
-applyLpf e filename contents settings d0 = go 1 "" settings d0 (T.lines contents)
+    IO (Either String (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint))
+applyLpf e filename contents settings d0 = go 1 "" settings d0 M.empty (T.lines contents)
   where
     tbl = e5IdTable e
     cidOf t = maybe emptyId id (M.lookup t (e5ConstIdByName e))
@@ -682,43 +683,43 @@ applyLpf e filename contents settings d0 = go 1 "" settings d0 (T.lines contents
     errAt lineno m = error ("lpf " ++ show lineno ++ ": " ++ m)
     setAttr cell key val d = setCellAttr cell key (propFromString val) d
 
-    go :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> [Text] -> IO (Either String (M.Map IdString Property, Design BelId WireId PipId))
-    go _ linebuf st d [] =
+    go :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> M.Map IdString ClockConstraint -> [Text] -> IO (Either String (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint))
+    go _ linebuf st d ccMap [] =
         if isEmptyLine linebuf
             then do
                 inputLpf <- intern tbl "input/lpf"
-                pure (Right (M.insert inputLpf (propFromString filename) st, d))
+                pure (Right (M.insert inputLpf (propFromString filename) st, d, ccMap))
             else pure (Left "unexpected end of LPF file")
-    go lineno linebuf st d (line : rest) =
+    go lineno linebuf st d ccMap (line : rest) =
         let line' = cutComment line
          in if isEmptyLine line'
-                then go (lineno + 1) linebuf st d rest
-                else execCommands lineno (linebuf <> line') st d rest
+                then go (lineno + 1) linebuf st d ccMap rest
+                else execCommands lineno (linebuf <> line') st d ccMap rest
 
-    execCommands :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> [Text] -> IO (Either String (M.Map IdString Property, Design BelId WireId PipId))
-    execCommands lineno buf st d rest =
+    execCommands :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> M.Map IdString ClockConstraint -> [Text] -> IO (Either String (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint))
+    execCommands lineno buf st d ccMap rest =
         case T.breakOn ";" buf of
             (cmd, after)
                 | not (T.null after) -> do
-                    r <- try (execCommand lineno cmd st d)
+                    r <- try (execCommand lineno cmd st d ccMap)
                     case r of
                         Left (err :: SomeException) -> pure (Left (show err))
-                        Right (st', d') -> execCommands lineno (T.drop 1 after) st' d' rest
-            _ -> go (lineno + 1) buf st d rest
+                        Right (st', d', ccMap') -> execCommands lineno (T.drop 1 after) st' d' ccMap' rest
+            _ -> go (lineno + 1) buf st d ccMap rest
 
-    execCommand :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> IO (M.Map IdString Property, Design BelId WireId PipId)
-    execCommand lineno cmd st d =
+    execCommand :: Int -> Text -> M.Map IdString Property -> Design BelId WireId PipId -> M.Map IdString ClockConstraint -> IO (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint)
+    execCommand lineno cmd st d ccMap =
         case T.words cmd of
-            [] -> pure (st, d)
+            [] -> pure (st, d, ccMap)
             (verb : ws) -> do
                 if
                     | verb == "BLOCK" ->
                         case ws of
-                            [w] | w == "ASYNCPATHS" || w == "RESETPATHS" -> pure (st, d)
-                            _ -> warn ("ignoring unsupported LPF command '" ++ T.unpack cmd ++ "' (on line " ++ show lineno ++ ")") >> pure (st, d)
+                            [w] | w == "ASYNCPATHS" || w == "RESETPATHS" -> pure (st, d, ccMap)
+                            _ -> warn ("ignoring unsupported LPF command '" ++ T.unpack cmd ++ "' (on line " ++ show lineno ++ ")") >> pure (st, d, ccMap)
                     | verb == "SYSCONFIG" -> do
                         st' <- foldM (sysconfigOne lineno) st ws
-                        pure (st', d)
+                        pure (st', d, ccMap)
                     | verb == "FREQUENCY" ->
                         case ws of
                             [] -> errAt lineno "expected object type after FREQUENCY"
@@ -744,11 +745,30 @@ applyLpf e filename contents settings d0 = go 1 "" settings d0 (T.lines contents
                                                             | unit /= "MHZ" && unit /= "KHZ" && unit /= "HZ" ->
                                                                 errAt lineno ("unsupported frequency unit '" ++ T.unpack unit ++ "'")
                                                             | otherwise -> errAt lineno ("invalid frequency value '" ++ T.unpack freqTxt ++ "'")
-                                                        Just _ -> do
-                                                            _ <- intern tbl target
-                                                            warn ("FREQUENCY clock constraints not yet supported (ignoring " ++ T.unpack target ++ ")")
-                                                            pure (st, d)
-                                    else warn ("ignoring unsupported LPF command '" ++ T.unpack cmd ++ " " ++ T.unpack etype ++ "' (on line " ++ show lineno ++ ")") >> pure (st, d)
+                                                        Just freqMhzD -> do
+                                                            targetId <- intern tbl target
+                                                            -- BaseCtx::addClock: the float getDelayFromNS
+                                                            -- roundtrip (period = 1e6/freq MHz in ps, low
+                                                            -- and high = half of that).
+                                                            let freqF = realToFrac freqMhzD :: Float
+                                                                per = getDelayFromNS e (realToFrac ((1000 :: Float) / freqF))
+                                                                half = getDelayFromNS e (realToFrac ((500 :: Float) / freqF))
+                                                                cc = ClockConstraint (DelayPair half half) (DelayPair half half) (DelayPair per per)
+                                                                -- C++ resolution: net_aliases (which contains
+                                                                -- every net, self-mapped) first, then the
+                                                                -- top-level ports.
+                                                                netName =
+                                                                    case M.lookup targetId (designNets d) of
+                                                                        Just _ -> Just targetId
+                                                                        Nothing -> getTopPortNet targetId d
+                                                            case netName of
+                                                                Just n -> do
+                                                                    hPutStrLn stderr ("Info: constraining clock net '" ++ T.unpack target ++ "' to " ++ printf "%.02f" freqF ++ " MHz")
+                                                                    pure (st, d, M.insert n cc ccMap)
+                                                                Nothing -> do
+                                                                    warn ("net '" ++ T.unpack target ++ "' does not exist in design, ignoring clock constraint")
+                                                                    pure (st, d, ccMap)
+                                    else warn ("ignoring unsupported LPF command '" ++ T.unpack cmd ++ " " ++ T.unpack etype ++ "' (on line " ++ show lineno ++ ")") >> pure (st, d, ccMap)
                     | verb == "LOCATE" -> do
                         if length ws < 4
                             then errAt lineno "expected syntax 'LOCATE COMP <port name> SITE <pin>'"
@@ -775,6 +795,7 @@ applyLpf e filename contents settings d0 = go 1 "" settings d0 (T.lines contents
                                                             pure
                                                                 ( st
                                                                 , if foundId then setAttr cellId' (cidOf "LOC") (stripQuotes lineno (ws !! 3)) d else d
+                                                                , ccMap
                                                                 )
                     | verb == "IOBUF" -> do
                         if length ws < 2
@@ -789,8 +810,8 @@ applyLpf e filename contents settings d0 = go 1 "" settings d0 (T.lines contents
                                             if M.member cellId (designCells d)
                                                 then foldM (iobufOne lineno cell cellId) d (drop 2 ws)
                                                 else pure d
-                                        pure (st, d')
-                    | otherwise -> pure (st, d)
+                                        pure (st, d', ccMap)
+                    | otherwise -> pure (st, d, ccMap)
 
     sysconfigOne :: Int -> M.Map IdString Property -> Text -> IO (M.Map IdString Property)
     sysconfigOne lineno st setting =

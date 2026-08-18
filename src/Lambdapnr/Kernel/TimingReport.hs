@@ -37,7 +37,7 @@ import Text.Printf (printf)
 import System.IO (hPutStrLn, stderr)
 
 import Lambdapnr.Kernel.Arch (Arch (..), Bel, Loc (..), Pip, Wire)
-import Lambdapnr.Kernel.Delay (DelayPair (..), DelayQuad (..), DelayT, dqMaxDelay, dqMinDelay)
+import Lambdapnr.Kernel.Delay (ClockConstraint (..), DelayPair (..), DelayQuad (..), DelayT, dqMaxDelay, dqMinDelay)
 import Lambdapnr.Kernel.IdString (IdString, IdTable, emptyId, idByName, idToText, intern)
 import Lambdapnr.Kernel.Netlist (CellInfo, Design (..), NetInfo (..), PipMap (..), PortDir (..), PortInfo (..), PortRef (..), cellBel, cellPorts, cellType, portNet)
 import Lambdapnr.Kernel.Timing (ClockEdge (..), TimingClockingInfo (..), TimingPortClass (..))
@@ -340,6 +340,7 @@ buildCriticalPathReport ::
     (CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> IdString -> Maybe DelayQuad) ->
     (NetInfo (Bel a) (Wire a) (Pip a) -> Bool) ->
     Double ->
+    M.Map IdString ClockConstraint ->
     M.Map IdString (CellInfo (Bel a) (Wire a) (Pip a)) ->
     M.Map IdString (NetInfo (Bel a) (Wire a) (Pip a)) ->
     TimingAnalyser ->
@@ -347,7 +348,7 @@ buildCriticalPathReport ::
     CellPortKey ->
     Bool ->
     CriticalPath
-buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq cells nets tmg pairId endpoint longest =
+buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq clkconstrs cells nets tmg pairId endpoint longest =
     let dp = taDomainPairs tmg !! pairId
         launchD = taDomains tmg !! pdpLaunch dp
         captureD = taDomains tmg !! pdpCapture dp
@@ -357,6 +358,16 @@ buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq cells nets 
         captureEdge = pdEdge captureD
         maxDelay0 = getDelayFromNS arch (1.0e9 / targetFreq)
         maxDelay1 = if launchEdge /= captureEdge then maxDelay0 `div` 2 else maxDelay0
+        -- the clkconstr override: period on same-edge paths, low/high on
+        -- opposite-edge (capture edge decides which half)
+        maxDelay2
+            | launchClk == emptyId = maxDelay1
+            | otherwise = case M.lookup launchClk clkconstrs of
+                Nothing -> maxDelay1
+                Just cc
+                    | launchEdge == captureEdge -> dpMin (ccPeriod cc)
+                    | captureEdge == RisingEdge -> dpMin (ccLow cc)
+                    | otherwise -> dpMin (ccHigh cc)
         crit = reverse (walkCritPath arch ptc cells tmg pairId endpoint longest)
         firstInp = head crit
         firstInpNetId = do
@@ -407,7 +418,7 @@ buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq cells nets 
         clockRouteDelay (Just clkNet) (c, p) = netinfoRouteDelay arch isGlobalNet cells nets clkNet (PortRef (Just c) p)
      in CriticalPath
             (ClockPair (ClockEvent launchClk launchEdge) (ClockEvent captureClk captureEdge))
-            maxDelay1
+            maxDelay2
             segsFinal
   where
     -- register_start / register_end resolution (the C++ loop keeps the
@@ -482,11 +493,12 @@ buildCritPathReports ::
     (CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> IdString -> Maybe DelayQuad) ->
     (NetInfo (Bel a) (Wire a) (Pip a) -> Bool) ->
     Double ->
+    M.Map IdString ClockConstraint ->
     M.Map IdString (CellInfo (Bel a) (Wire a) (Pip a)) ->
     M.Map IdString (NetInfo (Bel a) (Wire a) (Pip a)) ->
     TimingAnalyser ->
     (M.Map IdString (Double, Double), [(IdString, CriticalPath)], [CriticalPath], [IdString])
-buildCritPathReports arch tbl ptc pci getDelay isGlobalNet targetFreq cells nets tmg =
+buildCritPathReports arch tbl ptc pci getDelay isGlobalNet targetFreq clkconstrs cells nets tmg =
     let delayByDomain = maxDelayByDomainPairs arch ptc cells nets tmg
         empty0 = dedup [pdClock d | d <- taDomains tmg]
         (fmaxAcc, pathsAcc, emptyAcc) =
@@ -496,7 +508,7 @@ buildCritPathReports arch tbl ptc pci getDelay isGlobalNet targetFreq cells nets
                 (zip [0 ..] (taDomainPairs tmg))
         xclock =
             sortBy (cmpCritPath tbl)
-                [ buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq cells nets tmg i (head worst) True
+                [ buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq clkconstrs cells nets tmg i (head worst) True
                 | (i, dp) <- zip [0 ..] (taDomainPairs tmg)
                 , let launchD = taDomains tmg !! pdpLaunch dp
                       captureD = taDomains tmg !! pdpCapture dp
@@ -522,13 +534,16 @@ buildCritPathReports arch tbl ptc pci getDelay isGlobalNet targetFreq cells nets
                      in case M.lookup launchClk fmaxAcc of
                             Just (achieved, _) | fmax >= achieved -> (fmaxAcc, pathsAcc, emptyAcc)
                             _ ->
-                                let target = realToFrac (realToFrac (targetFreq / 1e6) :: Float)
+                                let target = case M.lookup launchClk clkconstrs of
+                                        Nothing -> realToFrac (realToFrac (targetFreq / 1e6) :: Float)
+                                        -- 1000 / getDelayNS(period): float division
+                                        Just cc -> realToFrac (1000 / (realToFrac (nsOf (dpMin (ccPeriod cc))) :: Float) :: Float)
                                     worst = getWorstEps tmg i 1
                                  in if null worst
                                         then (fmaxAcc, pathsAcc, emptyAcc)
                                         else
                                             ( M.insert launchClk (fmax, target) fmaxAcc
-                                            , pathsAcc ++ [(launchClk, buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq cells nets tmg i (head worst) True)]
+                                            , pathsAcc ++ [(launchClk, buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq clkconstrs cells nets tmg i (head worst) True)]
                                             , filter (/= launchClk) emptyAcc
                                             )
     nsOf d = getDelayNS arch d
@@ -547,8 +562,8 @@ cmpCritPath tbl a b =
      in compare (keyOf ca) (keyOf cb)
 
 -- | @build_slack_histogram_report@.
-buildSlackHistogram :: Arch a => a -> Double -> TimingAnalyser -> M.Map Int Int
-buildSlackHistogram arch targetFreq tmg =
+buildSlackHistogram :: Arch a => a -> Double -> M.Map IdString ClockConstraint -> TimingAnalyser -> M.Map Int Int
+buildSlackHistogram arch targetFreq clkconstrs tmg =
     foldl' domStep M.empty (taDomains tmg)
   where
     domStep acc dom = foldl' (\a (ep, _) -> epStep a ep) acc (pdEndpoints dom)
@@ -566,7 +581,10 @@ buildSlackHistogram arch targetFreq tmg =
                     -- the C++ keeps clk_period as a FLOAT here (float
                     -- subtraction against the delay, truncated back to
                     -- delay_t): delay_t slack = clk_period - delay;
-                    let clkPeriodF = realToFrac (getDelayFromNS arch (1.0e9 / targetFreq)) :: Float
+                    let clkPeriodF =
+                            case M.lookup (pdClock launch) clkconstrs of
+                                Nothing -> realToFrac (getDelayFromNS arch (1.0e9 / targetFreq)) :: Float
+                                Just cc -> realToFrac (dpMin (ccPeriod cc)) :: Float
                         clkPeriodF' = if pdEdge launch /= pdEdge capture then clkPeriodF / 2 else clkPeriodF
                         delay = dpMax (artValue arr) - dpMin (artValue req)
                         slack = truncate (clkPeriodF' - fromIntegral delay)
@@ -582,16 +600,17 @@ getMinDelayViolations ::
     (CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> IdString -> Maybe DelayQuad) ->
     (NetInfo (Bel a) (Wire a) (Pip a) -> Bool) ->
     Double ->
+    M.Map IdString ClockConstraint ->
     M.Map IdString (CellInfo (Bel a) (Wire a) (Pip a)) ->
     M.Map IdString (NetInfo (Bel a) (Wire a) (Pip a)) ->
     TimingAnalyser ->
     [CriticalPath]
-getMinDelayViolations arch ptc pci getDelay isGlobalNet targetFreq cells nets tmg =
+getMinDelayViolations arch ptc pci getDelay isGlobalNet targetFreq clkconstrs cells nets tmg =
     sortBy (\a b -> compare (pathTotal a) (pathTotal b)) violations
   where
     pathTotal cp = sum (map segDelay (pathSegments cp))
     violations =
-        [ buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq cells nets tmg pairId ep False
+        [ buildCriticalPathReport arch ptc pci getDelay isGlobalNet targetFreq clkconstrs cells nets tmg pairId ep False
         | captureId <- [0 .. length (taDomains tmg) - 1]
         , let capture = taDomains tmg !! captureId
         , let captureClk = pdClock capture
@@ -624,16 +643,17 @@ timingAnalysisReport ::
     (CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> IdString -> Maybe DelayQuad) ->
     (NetInfo (Bel a) (Wire a) (Pip a) -> Bool) ->
     Double ->
+    M.Map IdString ClockConstraint ->
     Design (Bel a) (Wire a) (Pip a) ->
     TimingResult
-timingAnalysisReport arch tbl ptc pci getDelay isGlobalNet targetFreq d =
+timingAnalysisReport arch tbl ptc pci getDelay isGlobalNet targetFreq clkconstrs d =
     let cells = designCells d
         nets = designNets d
         tmg0 = buildTimingAnalyserRaw arch ptc pci getDelay isGlobalNet False d
         tmg = runTimingAnalyserBy arch isGlobalNet True (netinfoRouteDelay arch isGlobalNet cells nets) tmg0 d
-        violations = getMinDelayViolations arch ptc pci getDelay isGlobalNet targetFreq cells nets tmg
-        (fmax, paths, xclock, empty) = buildCritPathReports arch tbl ptc pci getDelay isGlobalNet targetFreq cells nets tmg
-        hist = buildSlackHistogram arch targetFreq tmg
+        violations = getMinDelayViolations arch ptc pci getDelay isGlobalNet targetFreq clkconstrs cells nets tmg
+        (fmax, paths, xclock, empty) = buildCritPathReports arch tbl ptc pci getDelay isGlobalNet targetFreq clkconstrs cells nets tmg
+        hist = buildSlackHistogram arch targetFreq clkconstrs tmg
      in TimingResult fmax paths xclock empty hist violations
 
 -- ---------------------------------------------------------------------
@@ -655,6 +675,15 @@ emit = mapM_ (hPutStrLn stderr) . collapse
     collapse ("" : "" : rest) = collapse ("" : rest)
     collapse (l : rest) = l : collapse rest
     collapse [] = []
+
+-- | C @printf %0.02f@ semantics for special values (GHC prints
+-- "Infinity"; C prints "inf"). Reachable when a FREQUENCY-derived
+-- period truncates to 0 (1000 / getDelayNS 0 = inf).
+fmtF2 :: Double -> String
+fmtF2 x
+    | isNaN x = "nan"
+    | isInfinite x = if x < 0 then "-inf" else "inf"
+    | otherwise = printf "%.02f" x
 
 -- | @log_crit_paths@.
 logCritPaths :: Arch a => a -> IdTable -> M.Map IdString (CellInfo (Bel a) (Wire a) (Pip a)) -> M.Map IdString (NetInfo (Bel a) (Wire a) (Pip a)) -> TimingResult -> [String]
@@ -774,7 +803,7 @@ logFmax arch tbl warnOnFailure allowFail result =
                           width = maxWidth - length name
                           (fmax, target) = M.findWithDefault (0, 0) clock (trClockFmax result)
                           passed = target < fmax
-                          body = printf "Max frequency for clock %*s'%s': %.02f MHz (%s at %.02f MHz)" width ("" :: String) name fmax ((if passed then "PASS" else "FAIL") :: String) target
+                          body = printf "Max frequency for clock %*s'%s': %s MHz (%s at %s MHz)" width ("" :: String) name (fmtF2 fmax) ((if passed then "PASS" else "FAIL") :: String) (fmtF2 target)
                        in [ if not warnOnFailure || passed
                                 then "Info: " ++ body
                                 else
@@ -816,12 +845,12 @@ logFmax arch tbl warnOnFailure allowFail result =
                                 passed = target < fmax
                                 evA = clockEventName tbl (cpStart cp) maxWidthXca
                                 evB = clockEventName tbl (cpEnd cp) maxWidthXcb
-                                body = printf "Max frequency for %s -> %s: %.02f MHz (%s at %.02f MHz)" evA evB fmax ((if passed then "PASS" else "FAIL") :: String) target
+                                body = printf "Max frequency for %s -> %s: %s MHz (%s at %s MHz)" evA evB (fmtF2 fmax) ((if passed then "PASS" else "FAIL") :: String) (fmtF2 target)
                              in [ if not warnOnFailure || passed
                                     then "Info: " ++ body
                                     else
                                         if allowFail
-                                            then "Warning: " ++ printf "Max frequency for  %s -> %s: %.02f MHz (%s at %.02f MHz)" evA evB fmax ((if passed then "PASS" else "FAIL") :: String) target
+                                            then "Warning: " ++ printf "Max frequency for  %s -> %s: %s MHz (%s at %s MHz)" evA evB (fmtF2 fmax) ((if passed then "PASS" else "FAIL") :: String) (fmtF2 target)
                                             else "Error: " ++ body
                                 ]
                 | report <- trXclockPaths result

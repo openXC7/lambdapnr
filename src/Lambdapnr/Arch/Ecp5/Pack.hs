@@ -24,6 +24,7 @@ module Lambdapnr.Arch.Ecp5.Pack (
     printLogicUsage,
     archInfoToAttributes,
     pkGsrclkWire,
+    pkClkConstr,
 ) where
 
 import Control.Monad (foldM, when)
@@ -46,7 +47,7 @@ import Lambdapnr.Arch.Ecp5.ArchCellInfo
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
 import Lambdapnr.Arch.Ecp5.Chipdb
 import Lambdapnr.Arch.Ecp5.Types
-import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelByName, getBelGlobalBuf, getBelLocation, getBelName, getBelPins, getBelPinType, getBelPinWire, getBels, getBelType, getPipDstWire, getPipSrcWire, getPipsDownhill, getPipsUphill)
+import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelByName, getBelGlobalBuf, getBelLocation, getBelName, getBelPins, getBelPinType, getBelPinWire, getBels, getBelType, getDelayFromNS, getDelayNS, getPipDstWire, getPipSrcWire, getPipsDownhill, getPipsUphill)
 import Lambdapnr.Kernel.Delay (ClockConstraint (..), DelayPair (..))
 import Lambdapnr.Kernel.IdString (IdString (..), emptyId, idToText)
 import Lambdapnr.Kernel.IdString (intern)
@@ -64,6 +65,10 @@ import Control.Exception (evaluate)
 
 info :: String -> IO ()
 info = hPutStrLn stderr
+
+-- | @log_warning@ (the "Warning: " prefix is part of the sink output).
+warn :: String -> IO ()
+warn = hPutStrLn stderr . ("Warning: " ++)
 
 -- ---------------------------------------------------------------------------
 -- The packer state
@@ -98,10 +103,10 @@ data EdgeClockInfo = EdgeClockInfo
 
 initialPacker :: Ecp5 -> Design BelId WireId PipId -> Bool -> Packer
 initialPacker e d verbose =
-    initialPackerWithSettings e d verbose M.empty
+    initialPackerWithSettings e d verbose M.empty M.empty
 
-initialPackerWithSettings :: Ecp5 -> Design BelId WireId PipId -> Bool -> M.Map IdString Property -> Packer
-initialPackerWithSettings e d verbose settings =
+initialPackerWithSettings :: Ecp5 -> Design BelId WireId PipId -> Bool -> M.Map IdString Property -> M.Map IdString ClockConstraint -> Packer
+initialPackerWithSettings e d verbose settings clkconstrs =
     Packer
         { pkE = e
         , pkDesign = d
@@ -111,7 +116,7 @@ initialPackerWithSettings e d verbose settings =
         , pkDqsbufDqsg = M.empty
         , pkEclks = M.empty
         , pkBridgeSideHint = M.empty
-        , pkClkConstr = M.empty
+        , pkClkConstr = clkconstrs
         , pkUserConstrained = S.empty
         , pkGsrclkWire = Nothing
         , pkVerbose = verbose
@@ -167,6 +172,13 @@ netOf pk n = fromMaybe (error ("packer: missing net " ++ show n)) (lookupNet n (
 -- | @ci->getPort@.
 getPort :: CellInfo bel wire pip -> IdString -> Maybe IdString
 getPort ci p = portNet =<< M.lookup p (cellPorts ci)
+
+-- | Follow a @renameNet@ with the clock-constraint map: the C++ clkconstr
+-- rides on the @NetInfo@ object through renames.
+renameCk :: IdString -> IdString -> M.Map IdString ClockConstraint -> M.Map IdString ClockConstraint
+renameCk old new m = case M.lookup old m of
+    Nothing -> m
+    Just cc -> M.insert new cc (M.delete old m)
 
 -- | @str_or_default@.
 strOrDef :: M.Map IdString Property -> IdString -> String -> String
@@ -583,13 +595,13 @@ packIo pk = do
                 case getPort (cellOf pk1 trioName) (cid pk "I") of
                     Just donet | donet == cellName nxio ->
                         let nn = internT pk1 (idStr pk1 donet <> "$TRELLIS_IO_OUT")
-                         in pk1{pkDesign = renameNet donet nn (pkDesign pk1)}
+                         in pk1{pkDesign = renameNet donet nn (pkDesign pk1), pkClkConstr = renameCk donet nn (pkClkConstr pk1)}
                     _ -> pk1
             pk3 =
                 case getPort (cellOf pk2 trioName) (cid pk "O") of
                     Just dinet | dinet == cellName nxio ->
                         let nn = internT pk2 (idStr pk2 dinet <> "$TRELLIS_IO_IN")
-                         in pk2{pkDesign = renameNet dinet nn (pkDesign pk2)}
+                         in pk2{pkDesign = renameNet dinet nn (pkDesign pk2), pkClkConstr = renameCk dinet nn (pkClkConstr pk2)}
                     _ -> pk2
             -- any net still named after the nxio cell gets $rename$i
             pk4
@@ -598,7 +610,7 @@ packIo pk = do
                             let nn = internT p (idStr p (cellName nxio) <> "$rename$" <> T.pack (show i))
                              in if M.member nn (designNets (pkDesign p))
                                     then go (i + 1) p
-                                    else p{pkDesign = renameNet (cellName nxio) nn (pkDesign p)}
+                                    else p{pkDesign = renameNet (cellName nxio) nn (pkDesign p), pkClkConstr = renameCk (cellName nxio) nn (pkClkConstr p)}
                      in go 0 pk3
                 | otherwise = pk3
             -- create a new top port net for accurate IO timing analysis
@@ -642,9 +654,18 @@ packIo pk = do
                         case trio of
                             Just t -> do
                                 info (printf "%s feeds TRELLIS_IO %s, removing %s %s." (T.unpack (idStr pk (cellName ci))) (T.unpack (idStr pk t)) (T.unpack (idStr pk (cellType ci))) (T.unpack (idStr pk (cellName ci))))
-                                -- fanout/clkconstr checks are no-ops until
-                                -- the timing model lands
-                                pure (finish pk ci (Just t))
+                                -- configure_io_tile trivial case: move the
+                                -- clock constraint from the B-pin net to the
+                                -- O-pin net (std::swap, guarded by !onet)
+                                let swapCk =
+                                        case getPort (cellOf pk t) (cid pk "B") of
+                                            Just bNet
+                                                | Just cc <- M.lookup bNet (pkClkConstr pk) ->
+                                                    case getPort (cellOf pk t) (cid pk "O") of
+                                                        Just oNet | not (M.member oNet (pkClkConstr pk)) -> M.insert oNet cc (M.delete bNet (pkClkConstr pk))
+                                                        _ -> pkClkConstr pk
+                                            _ -> pkClkConstr pk
+                                pure (finish (pk{pkClkConstr = swapCk}) ci (Just t))
                             Nothing ->
                                 case drivesTopPort pk ionet of
                                     Just tp -> do
@@ -2078,132 +2099,194 @@ packEclk :: Packer -> Packer
 packEclk pk = pk -- TODO(pack-eclk): edge-clock promotion pass (needs make_eclk + routing)
 
 -- ---------------------------------------------------------------------------
--- generate_constraints
+-- generate_constraints (pack.cc)
 -- ---------------------------------------------------------------------------
 
-generateConstraints :: Packer -> Packer
-generateConstraints pk =
+-- | @generate_constraints@: derive clock constraints across clocking
+-- primitives from the user's FREQUENCY constraints. Mirrors the C++
+-- including its logging (the derived-constraint lines become part of
+-- the output whenever a FREQUENCY is present) and its float/double
+-- arithmetic (the @getDelayFromNS (getDelayNS ...)@ roundtrips).
+generateConstraints :: Packer -> IO Packer
+generateConstraints pk = do
+    info "Info: Generating derived timing constraints..."
     let pk0 = pk{pkUserConstrained = S.fromList [n | (n, ni) <- M.toList (designNets (pkDesign pk)), netClkConstrOf ni /= Nothing]}
         changed0 = S.fromList (M.keys (designNets (pkDesign pk)))
-        (pk', _) = iterateConstraints pk0 changed0 0
-     in pk'
+    (pk', _) <- iterateConstraints pk0 changed0 0
+    pure pk'
   where
     netClkConstrOf ni = M.lookup (netName ni) (pkClkConstr pk)
 
+    -- MHz(a) = 1000.0 / getDelayNS(a)
+    mhzOf p d = 1000.0 / getDelayNS (pkE p) d
+
+    -- C printf %f prints special values as inf/-inf/nan; GHC prints
+    -- "Infinity". A derived period can truncate to 0, making the MHz
+    -- value infinite.
+    fmtF1 x
+        | isNaN x = "nan"
+        | isInfinite x = if x < 0 then "-inf" else "inf"
+        | otherwise = printf "%.1f" x
+
+    mhzStr p d = fmtF1 (mhzOf p d)
+
+    -- equals_epsilon / equals_epsilon_pair / equals_epsilon_constr
+    eqEps a b = (fromIntegral (abs (a - b)) :: Double) / max (fromIntegral b) 1.0 < 1e-3
+    eqPair (DelayPair a1 a2) (DelayPair b1 b2) = eqEps a1 b1 && eqEps a2 b2
+    eqConstr (ClockConstraint lo1 hi1 pe1) (ClockConstraint lo2 hi2 pe2) =
+        eqPair lo1 lo2 && eqPair hi1 hi2 && eqPair pe1 pe2
+
     iterateConstraints p changed iter
-        | S.null changed || iter >= 5000 = (p, iter)
-        | otherwise =
-            let changedCells = S.fromList
-                    [ c
-                    | n <- S.toList changed
-                    , u <- activeUsers (netUsers (netOf p n))
-                    , prCell u /= Nothing
-                    , prPort u `elem` map (cid p) ["CLKI", "ECLKI", "CLK0", "CLK1"]
-                    , let c = fromMaybe (error "c") (prCell u)
-                    ]
+        | S.null changed || iter >= 5000 = pure (p, iter)
+        | otherwise = do
+            let changedCells =
+                    S.fromList
+                        [ c
+                        | n <- S.toList changed
+                        , u <- activeUsers (netUsers (netOf p n))
+                        , prCell u /= Nothing
+                        , prPort u `elem` map (cid p) ["CLKI", "ECLKI", "CLK0", "CLK1"]
+                        , let c = fromMaybe (error "generateConstraints: missing user cell") (prCell u)
+                        ]
+                -- C++ iter == 1 on its first pass; the OSC drivers of
+                -- any (initially all) nets join on that pass only.
                 changedCells' =
                     if iter == 0
                         then
                             let oscCells =
-                                    [ c
-                                    | (n, ni) <- M.toList (designNets (pkDesign p))
+                                    [ fromMaybe (error "generateConstraints: missing osc cell") (prCell (netDriver ni))
+                                    | (_, ni) <- M.toList (designNets (pkDesign p))
                                     , prPort (netDriver ni) == cid p "OSC"
-                                    , let c = prCell (netDriver ni)
-                                    , c /= Nothing
-                                    , fromMaybe (error "o") c `S.member` changedCells || True
+                                    , prCell (netDriver ni) /= Nothing
                                     ]
-                             in changedCells `S.union` S.fromList [fromMaybe (error "o2") c | c <- [prCell (netDriver ni) | (_, ni) <- M.toList (designNets (pkDesign p)), prPort (netDriver ni) == cid p "OSC"], c /= Nothing]
+                             in changedCells `S.union` S.fromList oscCells
                         else changedCells
-                (p', _) = foldl (stepCell iter) (p, ()) (S.toList changedCells')
-             in iterateConstraints p' S.empty (iter + 1)
-    stepCell iter (p, _) c =
+            (p', _) <- foldM (stepCell) (p, ()) (S.toList changedCells')
+            iterateConstraints p' S.empty (iter + 1)
+
+    stepCell (p, _) c =
         let ci = cellOf p c
          in if cellType ci == cid p "CLKDIVF"
-                then
+                then do
                     let div = strOrDef (cellParams ci) (cid p "DIV") "2.0"
                         ratio = if div == "2.0" then 1 / 2.0 else if div == "3.5" then 1 / 3.5 else error ("Unsupported divider ratio '" ++ div ++ "' on CLKDIVF")
-                     in (copyConstraint p c "CLKI" "CDIVX" ratio, ())
+                    p' <- copyConstraint p c "CLKI" "CDIVX" ratio
+                    pure (p', ())
                 else
                     if cellType ci `elem` [cid p "ECLKSYNCB", cid p "TRELLIS_ECLKBUF"]
-                        then (copyConstraint p c "ECLKI" "ECLKO" 1, ())
+                        then do
+                            p' <- copyConstraint p c "ECLKI" "ECLKO" 1
+                            pure (p', ())
                         else
                             if cellType ci == cid p "ECLKBRIDGECS"
-                                then (copyConstraint (copyConstraint p c "CLK0" "ECSOUT" 1) c "CLK1" "ECSOUT" 1, ())
+                                then do
+                                    p1 <- copyConstraint p c "CLK0" "ECSOUT" 1
+                                    p2 <- copyConstraint p1 c "CLK1" "ECSOUT" 1
+                                    pure (p2, ())
                                 else
                                     if cellType ci == cid p "DCCA"
-                                        then (copyConstraint p c "CLKI" "CLKO" 1, ())
+                                        then do
+                                            p' <- copyConstraint p c "CLKI" "CLKO" 1
+                                            pure (p', ())
                                         else
                                             if cellType ci == cid p "DCSC"
-                                                then (p, ()) -- TODO(pack-dcsc): merged constraint
+                                                then pure (p, ()) -- TODO(pack-dcsc): merged constraint
                                                 else
                                                     if cellType ci == cid p "EHXPLLL"
-                                                        then
-                                                            case getPort ci (cid p "CLKI") of
-                                                                Just clkiNet
-                                                                    | M.member clkiNet (pkClkConstr p) ->
-                                                                        let periodIn = dpMin (ccPeriod (pkClkConstr p M.! clkiNet))
-                                                                            periodInDiv = periodIn * fromIntegral (intOrDef (cellParams ci) (cid p "CLKI_DIV") 1)
-                                                                            path = strOrDef (cellParams ci) (cid p "FEEDBK_PATH") "CLKOP"
-                                                                            feedbackDiv0 = intOrDef (cellParams ci) (cid p "CLKFB_DIV") 1
-                                                                            feedbackDiv =
-                                                                                if path `elem` ["CLKOP", "INT_OP"]
-                                                                                    then feedbackDiv0 * intOrDef (cellParams ci) (cid p "CLKOP_DIV") 1
-                                                                                    else
-                                                                                        if path `elem` ["CLKOS", "INT_OS"]
-                                                                                            then feedbackDiv0 * intOrDef (cellParams ci) (cid p "CLKOS_DIV") 1
-                                                                                            else
-                                                                                                if path `elem` ["CLKOS2", "INT_OS2"]
-                                                                                                    then feedbackDiv0 * intOrDef (cellParams ci) (cid p "CLKOS2_DIV") 1
-                                                                                                    else
-                                                                                                        if path `elem` ["CLKOS3", "INT_OS3"]
-                                                                                                            then feedbackDiv0 * intOrDef (cellParams ci) (cid p "CLKOS3_DIV") 1
-                                                                                                            else 0
-                                                                            vcoPeriod = if feedbackDiv == 0 then 0 else periodInDiv `div` fromIntegral feedbackDiv
-                                                                            setOut pOut muxPort outPort defDiv =
-                                                                                if strOrDef (cellParams ci) (cid p muxPort) defDiv == "REFCLK"
-                                                                                    then copyConstraint p c "CLKI" outPort 1
-                                                                                    else setConstraint p c outPort (ClockConstraint (DelayPair (vcoPeriod `div` 2) (vcoPeriod `div` 2)) (DelayPair (vcoPeriod `div` 2) (vcoPeriod `div` 2)) (DelayPair vcoPeriod vcoPeriod))
-                                                                         in if feedbackDiv == 0
-                                                                                then (p, ())
-                                                                                else
-                                                                                    ( setOut p "OUTDIVIDER_MUXA" "CLKOP" "DIVA"
-                                                                                        |> \p1 -> setOut p1 "OUTDIVIDER_MUXB" "CLKOS" "DIVB"
-                                                                                        |> \p2 -> setOut p2 "OUTDIVIDER_MUXC" "CLKOS2" "DIVC"
-                                                                                        |> \p3 -> setOut p3 "OUTDIVIDER_MUXD" "CLKOS3" "DIVD"
-                                                                                    , ()
-                                                                                    )
-                                                                _ -> (p, ())
+                                                        then ehxplll p c
                                                         else
                                                             if cellType ci == cid p "OSCG"
-                                                                then
-                                                                    let divv = intOrDef (cellParams ci) (cid p "DIV") 128
-                                                                        period = fromIntegral ((divv * 1000000) `div` (2 * 155)) :: Int64
-                                                                        half = period `div` 2
-                                                                     in (setConstraint p c "OSC" (ClockConstraint (DelayPair half half) (DelayPair half half) (DelayPair period period)), ())
-                                                                else (p, ())
-      where
-        (|>) x f = f x
-    copyConstraint p c fromPort toPort ratio =
+                                                                then oscg p c
+                                                                else pure (p, ())
+
+    ehxplll p c =
         let ci = cellOf p c
-         in case (getPort ci (cid p fromPort), getPort ci (cid p toPort)) of
-                (Just from, Just to)
-                    | M.member from (pkClkConstr p) ->
-                        case M.lookup to (pkClkConstr p) of
-                            Just _ -> p
-                            Nothing ->
-                                let cc = pkClkConstr p M.! from
-                                    nlow = fromIntegral (floor (fromIntegral (dpMin (ccLow cc)) / ratio) :: Int64)
-                                    nhigh = fromIntegral (floor (fromIntegral (dpMin (ccHigh cc)) / ratio) :: Int64)
-                                    nperiod = fromIntegral (floor (fromIntegral (dpMin (ccPeriod cc)) / ratio) :: Int64)
-                                 in p{pkClkConstr = M.insert to (ClockConstraint (DelayPair nlow nlow) (DelayPair nhigh nhigh) (DelayPair nperiod nperiod)) (pkClkConstr p)}
-                _ -> p
-    setConstraint p c port cc =
-        case getPort (cellOf p c) (cid p port) of
-            Nothing -> p
+         in case getPort ci (cid p "CLKI") of
+                Just clkiNet
+                    | M.member clkiNet (pkClkConstr p) -> do
+                        let periodIn = dpMin (ccPeriod (pkClkConstr p M.! clkiNet))
+                        info ("Info:     Input frequency of PLL '" ++ T.unpack (idStr p c) ++ "' is constrained to " ++ mhzStr p periodIn ++ " MHz")
+                        let periodInDivD = fromIntegral (periodIn * fromIntegral (intOrDef (cellParams ci) (cid p "CLKI_DIV") 1)) :: Double
+                            path = strOrDef (cellParams ci) (cid p "FEEDBK_PATH") "CLKOP"
+                            fb0 = intOrDef (cellParams ci) (cid p "CLKFB_DIV") 1
+                            feedbackDiv =
+                                if path `elem` ["CLKOP", "INT_OP"] then Just (fb0 * intOrDef (cellParams ci) (cid p "CLKOP_DIV") 1)
+                                else if path `elem` ["CLKOS", "INT_OS"] then Just (fb0 * intOrDef (cellParams ci) (cid p "CLKOS_DIV") 1)
+                                else if path `elem` ["CLKOS2", "INT_OS2"] then Just (fb0 * intOrDef (cellParams ci) (cid p "CLKOS2_DIV") 1)
+                                else if path `elem` ["CLKOS3", "INT_OS3"] then Just (fb0 * intOrDef (cellParams ci) (cid p "CLKOS3_DIV") 1)
+                                else Nothing
+                        case feedbackDiv of
+                            Nothing -> do
+                                info ("Info:      Unable to determine output frequencies for PLL '" ++ T.unpack (idStr p c) ++ "' with FEEDBK_PATH=" ++ path)
+                                pure (p, ())
+                            Just fbDiv -> do
+                                let vcoPeriodD = periodInDivD / fromIntegral fbDiv
+                                    vcoFreq = mhzOf p (truncate vcoPeriodD :: Int64)
+                                when (vcoFreq < 400 || vcoFreq > 800) $
+                                    info ("Info:     Derived VCO frequency " ++ fmtF1 vcoFreq ++ " MHz of PLL '" ++ T.unpack (idStr p c) ++ "' is out of legal range [400MHz, 800MHz]")
+                                let setOut pOut muxPort outPort muxDef divParam =
+                                        if strOrDef (cellParams ci) (cid p muxPort) muxDef == "REFCLK"
+                                            then copyConstraint pOut c "CLKI" outPort 1
+                                            else
+                                                -- simple_clk_contraint(vco_period * div): the
+                                                -- double product is truncated to delay_t at
+                                                -- the call, THEN halved.
+                                                let outPeriod = truncate (vcoPeriodD * fromIntegral (intOrDef (cellParams ci) (cid p divParam) 1)) :: Int64
+                                                 in setConstraint pOut c outPort (ClockConstraint (DelayPair (outPeriod `div` 2) (outPeriod `div` 2)) (DelayPair (outPeriod `div` 2) (outPeriod `div` 2)) (DelayPair outPeriod outPeriod))
+                                p1 <- setOut p "OUTDIVIDER_MUXA" "CLKOP" "DIVA" "CLKOP_DIV"
+                                p2 <- setOut p1 "OUTDIVIDER_MUXB" "CLKOS" "DIVB" "CLKOS_DIV"
+                                p3 <- setOut p2 "OUTDIVIDER_MUXC" "CLKOS2" "DIVC" "CLKOS2_DIV"
+                                p4 <- setOut p3 "OUTDIVIDER_MUXD" "CLKOS3" "DIVD" "CLKOS3_DIV"
+                                pure (p4, ())
+                _ -> pure (p, ())
+
+    oscg p c =
+        let ci = cellOf p c
+            divv = intOrDef (cellParams ci) (cid p "DIV") 128
+            -- delay_t((1.0e6 / (2.0 * 155)) * div): double product,
+            -- truncated
+            period = truncate ((1.0e6 / (2.0 * 155)) * fromIntegral divv) :: Int64
+         in do
+                p' <- setConstraint p c "OSC" (ClockConstraint (DelayPair (period `div` 2) (period `div` 2)) (DelayPair (period `div` 2) (period `div` 2)) (DelayPair period period))
+                pure (p', ())
+
+    copyConstraint p c fromPort toPort ratio = do
+        let ci = cellOf p c
+        case (getPort ci (cid p fromPort), getPort ci (cid p toPort)) of
+            (Just from, Just to)
+                | M.member from (pkClkConstr p) ->
+                    case M.lookup to (pkClkConstr p) of
+                        Just existing -> do
+                            let derived = truncate (fromIntegral (dpMin (ccPeriod (pkClkConstr p M.! from))) / ratio) :: Int64
+                            when (not (eqEps (dpMin (ccPeriod existing)) derived) && S.member to (pkUserConstrained p)) $
+                                warn ("    Overriding derived constraint of " ++ mhzStr p (dpMin (ccPeriod existing)) ++ " MHz on net " ++ T.unpack (idStr p to) ++ " with user-specified constraint of " ++ mhzStr p derived ++ " MHz.")
+                            pure p
+                        Nothing -> do
+                            let cc = pkClkConstr p M.! from
+                                -- DelayPair(getDelayFromNS(getDelayNS(x) / ratio)):
+                                -- float ns roundtrip, then the float->delay_t
+                                -- truncation of getDelayFromNS
+                                nlow = getDelayFromNS (pkE p) (getDelayNS (pkE p) (dpMin (ccLow cc)) / ratio)
+                                nhigh = getDelayFromNS (pkE p) (getDelayNS (pkE p) (dpMin (ccHigh cc)) / ratio)
+                                nperiod = getDelayFromNS (pkE p) (getDelayNS (pkE p) (dpMin (ccPeriod cc)) / ratio)
+                                cc' = ClockConstraint (DelayPair nlow nlow) (DelayPair nhigh nhigh) (DelayPair nperiod nperiod)
+                            info ("Info:     Derived frequency constraint of " ++ mhzStr p nperiod ++ " MHz for net " ++ T.unpack (idStr p to))
+                            pure (p{pkClkConstr = M.insert to cc' (pkClkConstr p)})
+            _ -> pure p
+
+    setConstraint p c port cc = do
+        let ci = cellOf p c
+        case getPort ci (cid p port) of
+            Nothing -> pure p
             Just to ->
                 case M.lookup to (pkClkConstr p) of
-                    Just _ -> p
-                    Nothing -> p{pkClkConstr = M.insert to cc (pkClkConstr p)}
+                    Just existing -> do
+                        when (not (eqConstr existing cc) && S.member to (pkUserConstrained p)) $
+                            warn ("    Overriding derived constraint of " ++ mhzStr p (dpMin (ccPeriod existing)) ++ " MHz on net " ++ T.unpack (idStr p to) ++ " with user-specified constraint of " ++ mhzStr p (dpMin (ccPeriod cc)) ++ " MHz.")
+                        pure p
+                    Nothing -> do
+                        info ("Info:     Derived frequency constraint of " ++ mhzStr p (dpMin (ccPeriod cc)) ++ " MHz for net " ++ T.unpack (idStr p to))
+                        pure (p{pkClkConstr = M.insert to cc (pkClkConstr p)})
 
 -- ---------------------------------------------------------------------------
 -- promote_ecp5_globals (globals.cc: get_clocks + insert_dcc + place_dcc_dcs)
@@ -2340,7 +2423,12 @@ insertDcc pk net mdcsCell used =
                     glbName = internT p1 ("$glbnet$" <> idStr p1 net)
                     glbNet = (freshNetPk p1 glbName){netDriver = PortRef (Just dccName) (cid p1 "CLKO")}
                     p2 = p1{pkDesign = addNet glbName glbNet (pkDesign p1)}
-                    p3 = p2{pkDesign = connectPort dccName (cid p2 "CLKO") glbName (pkDesign p2)}
+                    -- globals.cc insert_dcc: the clkconstr is copied to the
+                    -- new glb net (low/high/period value copies)
+                    p2' = p2{pkClkConstr = case M.lookup net (pkClkConstr p1) of
+                        Nothing -> pkClkConstr p2
+                        Just cc -> M.insert glbName cc (pkClkConstr p2)}
+                    p3 = p2'{pkDesign = connectPort dccName (cid p2' "CLKO") glbName (pkDesign p2')}
                     -- C++ users are an indexed_store: iteration and slots
                     -- are in ADD order (ascending). keep_users collects in
                     -- that order; moved users append to the glb net in that
@@ -2719,10 +2807,10 @@ pkCk tag pk =
         m = T.unpack (T.pack ("LPCHK " ++ tag ++ ": 0x" ++ printf "%08x" c))
      in trace m pk
 
-packDesign :: Ecp5 -> Design BelId WireId PipId -> Bool -> M.Map IdString Property -> IO Packer
-packDesign e d verbose settings = do
+packDesign :: Ecp5 -> Design BelId WireId PipId -> Bool -> M.Map IdString Property -> M.Map IdString ClockConstraint -> IO Packer
+packDesign e d verbose settings clkconstrs = do
     printLogicUsage e d
-    let pk0 = initialPackerWithSettings e d verbose settings
+    let pk0 = initialPackerWithSettings e d verbose settings clkconstrs
     stop <- lookupEnv "LAMBDAPNR_PACK_STOP"
     let pk1 = pkCk "after-load" pk0
     -- pass order mirrors nextpnr-0.10's Ecp5Packer::pack() (the binary the
@@ -2756,8 +2844,8 @@ packDesign e d verbose settings = do
         pk27 = pkCk "lut5xs" pk26
     let pk28 = packFfs pk27
         pk29 = pkCk "ffs" pk28
-    let pk30 = generateConstraints pk29
-        pk31 = pkCk "constraints" pk30
+    pk30 <- generateConstraints pk29
+    let pk31 = pkCk "constraints" pk30
     let pk32 = promoteGlobals pk31
         pk33 = pkCk "globals" pk32
         imported = S.fromList (map cellName (cellsIter d))

@@ -26,7 +26,7 @@ import Lambdapnr.Arch.Ecp5.ArchCellInfo (assignArchInfo)
 import Lambdapnr.Arch.Ecp5.Binding (BindState (..), bindBel, emptyBindState)
 import Lambdapnr.Arch.Ecp5.Bitgen (buildConfig)
 import Lambdapnr.Arch.Ecp5.Config (renderChipConfig)
-import Lambdapnr.Arch.Ecp5.Pack (archInfoToAttributes, designOf, packDesign, pkGsrclkWire)
+import Lambdapnr.Arch.Ecp5.Pack (archInfoToAttributes, designOf, packDesign, pkClkConstr, pkGsrclkWire)
 import Lambdapnr.Arch.Ecp5.PlacerHeap (CellLoc (..), PlacerState (..), emptyPlacerState, placeHeapInitialIters, placeHeapMain, placeHeapSeed)
 import Lambdapnr.Arch.Ecp5.Placer1 (place1Refine)
 import Lambdapnr.Arch.Ecp5.Router (renderWireDump, routeEcp5Globals, routeRouter1, setupWireLocations)
@@ -42,6 +42,7 @@ import Lambdapnr.Kernel.Context (Context (..), newContextWith)
 import Lambdapnr.Kernel.JsonFrontend (loadJsonDesign)
 import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, NetInfo (..), PipMap (..), PlaceStrength, PortInfo (..), PortRef (..), cellAttrs, cellBel, cellBelStrength, cellName, cellParams, cellPorts, cellType, cellsIter, designCellOrder, designCells, designNetOrder, designNets, netAttrs, netDriver, netName, netUsers, netsIter, portNet, portType, prCell, prPort)
 import Lambdapnr.Kernel.DeterministicRng (Rng, rngFromState, rngState)
+import Lambdapnr.Kernel.Delay (ClockConstraint)
 import Lambdapnr.Kernel.Property (Property (..), propAsInt64, propAsString, propIsString)
 import Lambdapnr.Kernel.TimingReport (logTimingResults, printUtilisation, timingAnalysisReport)
 import qualified Data.Vector as V
@@ -206,10 +207,10 @@ runFlow prog opts = case checkSingleDevice opts of
                                             case r of
                                                 Left err -> die prog err
                                                 Right d -> do
-                                                    (settings', d') <- applyLpfs prog arch opts (ctxSettings ctx') d
+                                                    (settings', d', clkConstrs) <- applyLpfs prog arch opts (ctxSettings ctx') d
                                                     reportDesign prog jsonFile d'
                                                     hPutStrLn stderr "Packing design..."
-                                                    pk <- packDesign arch d' ("verbose" `elem` map fst opts) settings'
+                                                    pk <- packDesign arch d' ("verbose" `elem` map fst opts) settings' clkConstrs
         
                                                     _ <- do
                                                         stp <- lookupEnv "LAMBDAPNR_PACK_STOP"
@@ -292,7 +293,7 @@ runFlow prog opts = case checkSingleDevice opts of
                                                         cidPT = \x -> fromMaybe emptyId (cidOfT x)
                                                         isGlobalP ni = isJust (M.lookup (cidPT "ECP5_IS_GLOBAL") (netAttrs ni))
                                                         tgtP = settingDouble settings' (cidPT "target_freq") 1.2e7
-                                                        placeReport = timingAnalysisReport arch3 (ctxIdTable ctx') (getPortTimingClassAi dbP aiP) (getPortClockingInfoAi dbP aiP) (getCellDelayAi dbP aiP) isGlobalP tgtP dRefined
+                                                        placeReport = timingAnalysisReport arch3 (ctxIdTable ctx') (getPortTimingClassAi dbP aiP) (getPortClockingInfoAi dbP aiP) (getCellDelayAi dbP aiP) isGlobalP tgtP (pkClkConstr pk) dRefined
                                                     logTimingResults arch3 (ctxIdTable ctx') (designCells dRefined) (designNets dRefined) False True True False placeReport
                                                     let cksum2 =
                                                             checksum
@@ -335,7 +336,7 @@ runFlow prog opts = case checkSingleDevice opts of
                                                         cidRT = \x -> fromMaybe emptyId (cidOfT x)
                                                         isGlobalR ni = isJust (M.lookup (cidRT "ECP5_IS_GLOBAL") (netAttrs ni))
                                                         tgtR = settingDouble settings' (cidRT "target_freq") 1.2e7
-                                                        routeReport = timingAnalysisReport arch4 (ctxIdTable ctx') (getPortTimingClassAi dbR aiR) (getPortClockingInfoAi dbR aiR) (getCellDelayAi dbR aiR) isGlobalR tgtR dRouted
+                                                        routeReport = timingAnalysisReport arch4 (ctxIdTable ctx') (getPortTimingClassAi dbR aiR) (getPortClockingInfoAi dbR aiR) (getCellDelayAi dbR aiR) isGlobalR tgtR (pkClkConstr pk) dRouted
                                                     logTimingResults arch4 (ctxIdTable ctx') (designCells dRouted) (designNets dRouted) True True True True routeReport
                                                     routeCkFile <- lookupEnv "LP_ROUTE_CK"
                                                     case routeCkFile of
@@ -386,17 +387,19 @@ runFlow prog opts = case checkSingleDevice opts of
 -- @--lpf-allow-unconstrained@). The per-cell type checks intern
 -- @$nextpnr_ibuf@\/@$nextpnr_obuf@\/@$nextpnr_iobuf@ in the C++ evaluation
 -- order (short-circuit) — that interning is part of the contract.
-applyLpfs :: String -> Ecp5 -> [(String, Maybe String)] -> M.Map IdString Property -> Design BelId WireId PipId -> IO (M.Map IdString Property, Design BelId WireId PipId)
+-- The third component is the FREQUENCY-derived clock-constraint map
+-- (net name -> constraint), the @NetInfo::clkconstr@ equivalent.
+applyLpfs :: String -> Ecp5 -> [(String, Maybe String)] -> M.Map IdString Property -> Design BelId WireId PipId -> IO (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint)
 applyLpfs prog arch opts settings d =
     case [f | ("lpf", Just f) <- opts] of
-        [] -> pure (settings, d)
+        [] -> pure (settings, d, M.empty)
         files -> do
-            (st, d') <- foldM (applyOne prog arch) (settings, d) files
+            (st, d', ccs) <- foldM (applyOne prog arch) (settings, d, M.empty) files
             _ <- checkIoConstrained prog arch opts d'
-            pure (st, d')
+            pure (st, d', ccs)
   where
-    applyOne :: String -> Ecp5 -> (M.Map IdString Property, Design BelId WireId PipId) -> FilePath -> IO (M.Map IdString Property, Design BelId WireId PipId)
-    applyOne prog arch (st, d) file = do
+    applyOne :: String -> Ecp5 -> (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint) -> FilePath -> IO (M.Map IdString Property, Design BelId WireId PipId, M.Map IdString ClockConstraint)
+    applyOne prog arch (st, d, ccs) file = do
         lsrc <- try (TIO.readFile file) :: IO (Either SomeException Text)
         case lsrc of
             Left _ -> die prog ("failed to open LPF file '" ++ file ++ "'")
@@ -404,7 +407,7 @@ applyLpfs prog arch opts settings d =
                 r <- applyLpf arch (T.pack file) contents st d
                 case r of
                     Left err -> die prog ("failed to parse LPF file '" ++ file ++ "': " ++ err)
-                    Right ok -> pure ok
+                    Right (st', d', cc') -> pure (st', d', M.union cc' ccs)
 
 -- | The unconstrained-IO check loop of @customAfterLoad@.
 checkIoConstrained :: String -> Ecp5 -> [(String, Maybe String)] -> Design BelId WireId PipId -> IO ()
