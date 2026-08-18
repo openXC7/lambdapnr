@@ -23,6 +23,7 @@ module Lambdapnr.Arch.Ecp5.Pack (
     designOf,
     printLogicUsage,
     archInfoToAttributes,
+    pkGsrclkWire,
 ) where
 
 import Control.Monad (foldM, when)

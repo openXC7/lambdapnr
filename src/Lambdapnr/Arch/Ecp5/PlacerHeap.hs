@@ -38,7 +38,8 @@ import Lambdapnr.Kernel.Delay (DelayPair (..), DelayQuad (..))
 import Lambdapnr.Kernel.TimingAnalyser (ArrivReqTime (..), CellArc (..), CellArcType (..), CellPortKey (..), PerDomain (..), PerDomainPair (..), PerPort (..), PortDomainPairData (..), TimingAnalyser (..), buildTimingAnalyser, criticalityOf, runTimingAnalyser)
 import Lambdapnr.Arch.Ecp5.ArchCellInfo (ArchInfo, CombInfo (..), FfInfo (..), assignArchInfo, lookupComb, lookupFf, slicesCompatible)
 import Lambdapnr.Arch.Ecp5.CellTiming (getCellDelayAi, getPortClockingInfoAi, getPortTimingClassAi)
-import Lambdapnr.Arch.Ecp5.Binding (bindBel, boundBelCell, unbindBel)
+import Lambdapnr.Arch.Ecp5.Binding (bindBelLut, boundBelCell, unbindBel)
+
 import Lambdapnr.Arch.Ecp5.Chipdb (belAt, biZ)
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), Ecp5Device (..), Location (..), eaDevice)
 import Lambdapnr.Kernel.Arch (Loc (..), checkBelAvail, getBelByLocation, getBelGlobalBuf, getBelLocation, getBelByName, getBels, getBelsByTile, getBelType, isValidBelForCellType)
@@ -49,6 +50,11 @@ import Foreign.Storable (peek, poke)
 import Lambdapnr.Kernel.IdString (IdString (..), IdTable, emptyId, idToText, intern)
 import Lambdapnr.Kernel.Netlist
 import Lambdapnr.Kernel.Property (propAsString, propFromString)
+
+-- | bindBel including the C++ lutperm_allowed side effect.
+bindBelH :: Ecp5 -> IdString -> BelId -> PlaceStrength -> Ecp5 -> Design BelId WireId PipId -> (Ecp5, Design BelId WireId PipId)
+bindBelH e cell bel strength eAcc d = let (bs, d') = bindBelLut (combCtxOf e) (ecp5Chipdb e) cell bel strength (ecp5Bind eAcc) d in (setEcp5Bind bs eAcc, d')
+
 
 -- | The placer's per-cell location record (@CellLocation@).
 data CellLoc = CellLoc
@@ -122,7 +128,7 @@ placeConstraints e cidOf d0 =
                                 case boundBelCell bel (ecp5Bind eAcc) of
                                     Just other -> error ("Cell '" ++ T.unpack (idToText (ecp5IdTable eAcc) (cellName ci)) ++ "' cannot be bound to bel since already bound to cell '" ++ T.unpack (idToText (ecp5IdTable eAcc) other) ++ "'")
                                     Nothing ->
-                                        let (bs, d') = bindBel (cellName ci) bel StrengthUser (ecp5Bind eAcc) dAcc
+                                        let (bs, d') = bindBelLut (combCtxOf eAcc) (ecp5Chipdb eAcc) (cellName ci) bel StrengthUser (ecp5Bind eAcc) dAcc
                                             e' = setEcp5Bind bs eAcc
                                          in if isBelLocValidE ai0 e' cidOf d' bel
                                                 then (e', d', n + 1)
@@ -258,7 +264,7 @@ seedPlacement e cidOf d ps =
                                      , availAcc'
                                      )
                                 else
-                                    let (bs, d') = bindBel (cellName ci) bel StrengthStrong (ecp5Bind eAcc) dAcc
+                                    let (bs, d') = bindBelLut (combCtxOf eAcc) (ecp5Chipdb eAcc) (cellName ci) bel StrengthStrong (ecp5Bind eAcc) dAcc
                                         e' = setEcp5Bind bs eAcc
                                      in if isBelLocValidE ai0 e' cidOf d' bel
                                             then ( e'
@@ -894,7 +900,7 @@ placeHeapMain e cidOf d0 ps0 = do
                         ( \(eX, dX) (c, mb, st) ->
                             case mb of
                                 Nothing -> (eX, dX)
-                                Just bel -> let (bs, d') = bindBel c bel st (ecp5Bind eX) dX in (setEcp5Bind bs eX, d')
+                                Just bel -> let (bs, d') = bindBelLut (combCtxOf eX) (ecp5Chipdb eX) c bel st (ecp5Bind eX) dX in (setEcp5Bind bs eX, d')
                         )
                         (eU, dU)
                         solnA
@@ -1742,7 +1748,7 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                     Just boundC ->
                                         let (bs, d') = unbindBel boundC b (ecp5Bind eX) dX
                                          in (setEcp5Bind bs eX, d', remHeapPush heapX (M.findWithDefault 1 boundC chainMap) boundC)
-                            (eB, dB) = let (bs, d') = bindBel cName b StrengthWeak (ecp5Bind eB0) dB0 in (setEcp5Bind bs eB0, d')
+                            (eB, dB) = let (bs, d') = bindBelLut (combCtxOf eB0) (ecp5Chipdb eB0) cName b StrengthWeak (ecp5Bind eB0) dB0 in (setEcp5Bind bs eB0, d')
                             Loc lx ly _ = getBelLocation eB b
                             locsB = M.insert cName (locOf locsX cName){plcX = lx, plcY = ly} locsX
                          in (eB, dB, locsB, heapB0)
@@ -1774,7 +1780,7 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                         then goBel (eA, dA, locsA, rngA', heapA, placedA, bestA, bestInpA) rest
                                                         else
                                                             let (eR, dR) = maybe (eA, dA) (\bc -> let (bs, d') = unbindBel bc sz (ecp5Bind eA) dA in (setEcp5Bind bs eA, d')) boundC
-                                                                (eB, dB) = let (bs, d') = bindBel cName sz StrengthWeak (ecp5Bind eR) dR in (setEcp5Bind bs eR, d')
+                                                                (eB, dB) = let (bs, d') = bindBelLut (combCtxOf eR) (ecp5Chipdb eR) cName sz StrengthWeak (ecp5Bind eR) dR in (setEcp5Bind bs eR, d')
                                                                 valid = isBelLocValidE ai eB cidOf dB sz
                                                                 _dbgBel =
                                                                     if nm2 cName == "basesoc_uart_core_tx2_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_LUT4_Z"
@@ -1782,7 +1788,7 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                                         else ()
                                                                 undo (eX2, dX2) =
                                                                     let (eU, dU) = let (bs, d') = unbindBel cName sz (ecp5Bind eX2) dX2 in (setEcp5Bind bs eX2, d')
-                                                                        (eF, dF) = maybe (eU, dU) (\bc -> let (bs, d') = bindBel bc sz StrengthWeak (ecp5Bind eU) dU in (setEcp5Bind bs eU, d')) boundC
+                                                                        (eF, dF) = maybe (eU, dU) (\bc -> let (bs, d') = bindBelLut (combCtxOf eU) (ecp5Chipdb eU) bc sz StrengthWeak (ecp5Bind eU) dU in (setEcp5Bind bs eU, d')) boundC
                                                                      in (eF, dF)
                                                         in _dbgBel `seq` (if not valid
                                                                     then let (eF, dF) = undo (eB, dB) in goBel (eF, dF, locsA, rngA', heapA, placedA, bestA, bestInpA) rest
@@ -1843,7 +1849,7 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                                                             (eM, dM, moves)
                                                                                             (clusterCells (cellCluster (cellOf dM bc)))
                                                                                     else let (bs, d') = unbindBel bc tb (ecp5Bind eM) dM in (setEcp5Bind bs eM, d', moves)
-                                                                    (eM2, dM2) = let (bs, d') = bindBel tc tb StrengthStrong (ecp5Bind eM1) dM1 in (setEcp5Bind bs eM1, d')
+                                                                    (eM2, dM2) = let (bs, d') = bindBelLut (combCtxOf eM1) (ecp5Chipdb eM1) tc tb StrengthStrong (ecp5Bind eM1) dM1 in (setEcp5Bind bs eM1, d')
                                                                 in (eM2, dM2, M.insert tb boundC moves1)
                                                             (eP, dP, moves) = foldl' moveOne (eA, dA, M.empty :: M.Map BelId (Maybe IdString)) targets
                                                             valid = all (\tb -> isBelLocValidE ai eP cidOf dP tb) (M.keys moves)
@@ -1856,12 +1862,12 @@ strictLegalise ai e cidOf d fbMap chainMap maxX maxY locs0 solveCells udata time
                                                                     Nothing ->
                                                                         case bc of
                                                                             Nothing -> (eR, dR)
-                                                                            Just bc' -> let (bs, d') = bindBel bc' tb StrengthWeak (ecp5Bind eR) dR in (setEcp5Bind bs eR, d')
+                                                                            Just bc' -> let (bs, d') = bindBelLut (combCtxOf eR) (ecp5Chipdb eR) bc' tb StrengthWeak (ecp5Bind eR) dR in (setEcp5Bind bs eR, d')
                                                                     Just cur ->
                                                                         let (bs, d') = unbindBel cur tb (ecp5Bind eR) dR
                                                                             (eB2, dB2) = case bc of
                                                                                 Nothing -> (setEcp5Bind bs eR, d')
-                                                                                Just bc' -> let (bs2, d2) = bindBel bc' tb StrengthWeak bs d' in (setEcp5Bind bs2 eR, d2)
+                                                                                Just bc' -> let (bs2, d2) = bindBelLut (combCtxOf eR) (ecp5Chipdb eR) bc' tb StrengthWeak bs d' in (setEcp5Bind bs2 eR, d2)
                                                                          in (eB2, dB2)
                                                      in _dbgClu `seq` (if not valid
                                                             then let (eR2, dR2) = foldl' revert (eP, dP) (M.toList moves) in goBel2 (eR2, dR2, locsA, rngA, heapA, placedA, bestA, bestInpA) rest

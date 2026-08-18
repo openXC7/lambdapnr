@@ -23,12 +23,13 @@ import System.IO (hPutStrLn, stderr)
 
 import Lambdapnr.Arch.Ecp5
 import Lambdapnr.Arch.Ecp5.ArchCellInfo (assignArchInfo)
-import Lambdapnr.Arch.Ecp5.Binding (bindBel, emptyBindState)
+import Lambdapnr.Arch.Ecp5.Binding (BindState (..), bindBel, emptyBindState)
 import Lambdapnr.Arch.Ecp5.Bitgen (buildConfig)
 import Lambdapnr.Arch.Ecp5.Config (renderChipConfig)
-import Lambdapnr.Arch.Ecp5.Pack (Packer, archInfoToAttributes, designOf, packDesign)
+import Lambdapnr.Arch.Ecp5.Pack (Packer, archInfoToAttributes, designOf, packDesign, pkGsrclkWire)
 import Lambdapnr.Arch.Ecp5.PlacerHeap (CellLoc (..), PlacerState (..), emptyPlacerState, placeHeapInitialIters, placeHeapMain, placeHeapSeed)
 import Lambdapnr.Arch.Ecp5.Placer1 (place1Refine)
+import Lambdapnr.Arch.Ecp5.Router (renderWireDump, routeEcp5Globals, routeRouter1, setupWireLocations)
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), Location (..), PipId (..), WireId (..), eaDevice)
 import Lambdapnr.CLI (Command (..), applyGeneralOpts, checkSingleDevice, ecp5ArgsFromOpts, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
@@ -38,9 +39,9 @@ import Lambdapnr.Kernel.Checksum (checksum, checksumCell, checksumNet)
 import Lambdapnr.Kernel.ArchCheck (archcheck)
 import Lambdapnr.Kernel.Context (Context (..), newContextWith)
 import Lambdapnr.Kernel.JsonFrontend (loadJsonDesign)
-import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, NetInfo (..), PlaceStrength, PortInfo (..), PortRef (..), cellAttrs, cellBel, cellBelStrength, cellName, cellParams, cellPorts, cellType, cellsIter, designCellOrder, designCells, designNetOrder, designNets, netAttrs, netDriver, netName, netUsers, netsIter, portNet, portType, prCell, prPort)
+import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, NetInfo (..), PipMap (..), PlaceStrength, PortInfo (..), PortRef (..), cellAttrs, cellBel, cellBelStrength, cellName, cellParams, cellPorts, cellType, cellsIter, designCellOrder, designCells, designNetOrder, designNets, netAttrs, netDriver, netName, netUsers, netsIter, portNet, portType, prCell, prPort)
 import Lambdapnr.Kernel.DeterministicRng (Rng, rngFromState, rngState)
-import Lambdapnr.Kernel.Property (Property (..))
+import Lambdapnr.Kernel.Property (Property (..), propAsString)
 import qualified Data.Vector as V
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
@@ -86,10 +87,11 @@ stateDump arch tbl d = do
 -- | Serialize the post-heap placement + RNG state (the placer1 resume
 -- debug path — lets the SA refine be iterated without re-running the
 -- 5-minute heap loop).
-writePlacer1State :: FilePath -> Rng -> Design BelId WireId PipId -> IO ()
-writePlacer1State f rng d = do
+writePlacer1State :: FilePath -> Rng -> BindState -> Design BelId WireId PipId -> IO ()
+writePlacer1State f rng bs d = do
     let ls =
             ("RNG " ++ show (rngState rng)) :
+            ["L " ++ show i ++ " " ++ show r | (i, r) <- M.toList (bsLutperm bs)] ++
             [ show (unIdString (cellName ci))
                 ++ " "
                 ++ show (fromIntegral (locX (belLoc bel)) :: Int)
@@ -105,28 +107,45 @@ writePlacer1State f rng d = do
     writeFile f (unlines ls)
 
 -- | Read a saved post-heap state: the RNG word and the cell->bel bindings.
-readPlacer1State :: FilePath -> IO (Rng, [(IdString, BelId, PlaceStrength)])
+readPlacer1State :: FilePath -> IO (Rng, M.Map Int Int, [(IdString, BelId, PlaceStrength)])
 readPlacer1State f = do
     ls <- lines <$> readFile f
     let rngW = case ls of
             (('R' : 'N' : 'G' : ' ' : rest) : _) -> rngFromState (read rest :: Word64)
             _ -> error "bad placer1 save: no RNG line"
+        lut =
+            M.fromList
+                [ (read i, read r)
+                | l <- ls
+                , let ws = words l
+                , case ws of
+                    ["L", i, r] -> True
+                    _ -> False
+                , let ["L", i, r] = ws
+                ]
         binds =
             [ ( IdString (read c)
               , BelId (Location (fromIntegral (read x :: Int)) (fromIntegral (read y :: Int))) (fromIntegral (read b :: Int))
               , toEnum (read s)
               )
-            | l <- drop 1 ls
+            | l <- ls
             , let ws = words l
-            , not (null ws)
+            , case ws of
+                [c, x, y, b, s] -> True
+                _ -> False
             , let [c, x, y, b, s] = ws
             ]
-    pure (rngW, binds)
+    pure (rngW, lut, binds)
 
--- | Apply saved bindings to the packed design (rebuilds the bel->cell map).
-applyPlacer1Bindings :: Ecp5 -> Design BelId WireId PipId -> [(IdString, BelId, PlaceStrength)] -> (Ecp5, Design BelId WireId PipId)
-applyPlacer1Bindings arch d binds =
-    let (bs, d') = foldl' (\(b, dd) (c, bel, s) -> bindBel c bel s b dd) (emptyBindState, d) binds
+-- | Active users in slot order (the C++ indexed_store iterate).
+activeUsersV :: V.Vector (Maybe PortRef) -> [PortRef]
+activeUsersV v = [u | Just u <- V.toList v]
+
+-- | Apply saved bindings to the packed design (rebuilds the bel->cell map
+-- and restores the lutperm map).
+applyPlacer1Bindings :: Ecp5 -> Design BelId WireId PipId -> (M.Map Int Int, [(IdString, BelId, PlaceStrength)]) -> (Ecp5, Design BelId WireId PipId)
+applyPlacer1Bindings arch d (lut, binds) =
+    let (bs, d') = foldl' (\(b, dd) (c, bel, s) -> bindBel c bel s b dd) (emptyBindState{bsLutperm = lut}, d) binds
      in (setEcp5Bind bs arch, d')
 
 main :: IO ()
@@ -219,44 +238,56 @@ runFlow prog opts = case checkSingleDevice opts of
                                                     -- placer stage 1: constraints + seed + initial HPWL
                                                     hPutStrLn stderr (printf "LPDBG rngstate %016x" (rngState (ctxRng ctx')))
                                                     let cidOfT = \t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))
-                                                    resumeFile <- lookupEnv "LP_PLACER1_RESUME"
-                                                    (arch2, dPlaced, rngPlaced) <-
-                                                        case resumeFile of
+                                                    -- LP_ROUTE_RESUME: skip the whole placer on reruns by
+                                                    -- loading the post-place state (RNG + bel bindings)
+                                                    -- written by LP_PLACE_SAVE.
+                                                    routeResumeEarly <- lookupEnv "LP_ROUTE_RESUME"
+                                                    (arch3, dRefined, rngRefined) <-
+                                                        case routeResumeEarly of
                                                             Just f -> do
-                                                                (rngW, binds) <- readPlacer1State f
-                                                                let (archR, dR) = applyPlacer1Bindings arch dPacked' binds
-                                                                pure (archR, dR, rngW)
+                                                                (rngW, lutW, binds) <- readPlacer1State f
+                                                                let (archR0, dR0) = applyPlacer1Bindings arch dPacked' (lutW, binds)
+                                                                pure (archR0, dR0, rngW)
                                                             Nothing -> do
-                                                                let (_, d2, ps, nConstr, hpwl0) = placeHeapSeed arch cidOfT dPacked' (emptyPlacerState (ctxRng ctx'))
-                                                                _ <- evaluate (rngState (psRng ps))
-                                                                hPutStrLn stderr ("Placed " ++ show nConstr ++ " cells based on constraints.")
-                                                                hPutStrLn stderr ("Creating initial analytic placement for " ++ show (length (psPlaceCells ps)) ++ " cells, random placement wirelen = " ++ show hpwl0 ++ ".")
-                                                                ps1 <- placeHeapInitialIters arch cidOfT dPacked' ps
-                                                                writeFile "/tmp/hs_seed_dump.txt" (unlines ([ "SEED " ++ T.unpack (idToText (ctxIdTable ctx') c) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | c <- psPlaceCells ps, Just l <- [M.lookup c (psLocs ps)]] ++ [ "LOCK " ++ T.unpack (idToText (ctxIdTable ctx') n) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | (n, l) <- M.toList (psLocs ps), plcLocked l ]))
-                                                                (arch2h, dPlacedh, ps2h) <- placeHeapMain arch cidOfT d2 ps1
-                                                                pure (arch2h, dPlacedh, psRng ps2h)
-                                                    saveFile <- lookupEnv "LP_PLACER1_SAVE"
-                                                    case saveFile of
-                                                        Just f -> writePlacer1State f rngPlaced dPlaced
-                                                        Nothing -> pure ()
-                                                    let (arch3, dRefined, rngRefined) = place1Refine arch2 cidOfT dPlaced rngPlaced
-                                                    placeSaveFile <- lookupEnv "LP_PLACE_SAVE"
-                                                    case placeSaveFile of
-                                                        Just f -> writePlacer1State f rngRefined dRefined
-                                                        Nothing -> pure ()
-                                                    placeCkFile <- lookupEnv "LP_PLACE_CK"
-                                                    case placeCkFile of
-                                                        Just f -> do
-                                                            let cellLns =
-                                                                    [ "C " ++ show (unIdString (cellName ci)) ++ " " ++ printf "%08x" (checksumCell (fromIntegral . belIdx) ci)
-                                                                    | ci <- cellsIter dRefined
-                                                                    ]
-                                                                netLns =
-                                                                    [ "N " ++ show (unIdString (netName ni)) ++ " " ++ printf "%08x" (checksumNet (fromIntegral . wireIdx) (fromIntegral . pipIdx) ni)
-                                                                    | ni <- netsIter dRefined
-                                                                    ]
-                                                            writeFile f (unlines (cellLns ++ netLns))
-                                                        Nothing -> pure ()
+                                                                resumeFile <- lookupEnv "LP_PLACER1_RESUME"
+                                                                (arch2, dPlaced, rngPlaced) <-
+                                                                    case resumeFile of
+                                                                        Just f -> do
+                                                                            (rngW, lutW, binds) <- readPlacer1State f
+                                                                            let (archR, dR) = applyPlacer1Bindings arch dPacked' (lutW, binds)
+                                                                            pure (archR, dR, rngW)
+                                                                        Nothing -> do
+                                                                            let (_, d2, ps, nConstr, hpwl0) = placeHeapSeed arch cidOfT dPacked' (emptyPlacerState (ctxRng ctx'))
+                                                                            _ <- evaluate (rngState (psRng ps))
+                                                                            hPutStrLn stderr ("Placed " ++ show nConstr ++ " cells based on constraints.")
+                                                                            hPutStrLn stderr ("Creating initial analytic placement for " ++ show (length (psPlaceCells ps)) ++ " cells, random placement wirelen = " ++ show hpwl0 ++ ".")
+                                                                            ps1 <- placeHeapInitialIters arch cidOfT dPacked' ps
+                                                                            writeFile "/tmp/hs_seed_dump.txt" (unlines ([ "SEED " ++ T.unpack (idToText (ctxIdTable ctx') c) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | c <- psPlaceCells ps, Just l <- [M.lookup c (psLocs ps)]] ++ [ "LOCK " ++ T.unpack (idToText (ctxIdTable ctx') n) ++ " " ++ show (plcX l) ++ " " ++ show (plcY l) | (n, l) <- M.toList (psLocs ps), plcLocked l ]))
+                                                                            (arch2h, dPlacedh, ps2h) <- placeHeapMain arch cidOfT d2 ps1
+                                                                            pure (arch2h, dPlacedh, psRng ps2h)
+                                                                saveFile <- lookupEnv "LP_PLACER1_SAVE"
+                                                                case saveFile of
+                                                                    Just f -> writePlacer1State f rngPlaced (ecp5Bind arch2) dPlaced
+                                                                    Nothing -> pure ()
+                                                                let (arch3x, dRefinedx, rngRefinedx) = place1Refine arch2 cidOfT dPlaced rngPlaced
+                                                                placeSaveFile <- lookupEnv "LP_PLACE_SAVE"
+                                                                case placeSaveFile of
+                                                                    Just f -> writePlacer1State f rngRefinedx (ecp5Bind arch3x) dRefinedx
+                                                                    Nothing -> pure ()
+                                                                placeCkFile <- lookupEnv "LP_PLACE_CK"
+                                                                case placeCkFile of
+                                                                    Just f -> do
+                                                                        let cellLns =
+                                                                                [ "C " ++ show (unIdString (cellName ci)) ++ " " ++ printf "%08x" (checksumCell (fromIntegral . belIdx) ci)
+                                                                                | ci <- cellsIter dRefinedx
+                                                                                ]
+                                                                            netLns =
+                                                                                [ "N " ++ show (unIdString (netName ni)) ++ " " ++ printf "%08x" (checksumNet (fromIntegral . wireIdx) (fromIntegral . pipIdx) ni)
+                                                                                | ni <- netsIter dRefinedx
+                                                                                ]
+                                                                        writeFile f (unlines (cellLns ++ netLns))
+                                                                    Nothing -> pure ()
+                                                                pure (arch3x, dRefinedx, rngRefinedx)
                                                     let cksum2 =
                                                             checksum
                                                                 (fromIntegral . belIdx)
@@ -264,13 +295,73 @@ runFlow prog opts = case checkSingleDevice opts of
                                                                 (fromIntegral . pipIdx)
                                                                 dRefined
                                                     let ck2 = cksum2 in ck2 `seq` hPutStrLn stderr (printf "Post-place checksum: 0x%08x" ck2)
+                                                    -- Arch::place() tail: archInfoToAttributes() after the placer1
+                                                    -- checksum print (sets NEXTPNR_BEL/BEL_STRENGTH on placed cells,
+                                                    -- ROUTING="" on nets — both are part of the router1-end checksum).
+                                                    dRefinedAttr <- archInfoToAttributes arch3 dRefined
+                                                    -- Arch::route(): setup_wire_locations -> route_ecp5_globals
+                                                    -- -> router1 (mirroring arch.cc:686-708; the tail
+                                                    -- archInfoToAttributes is checksum-invisible here and skipped)
+                                                    hPutStrLn stderr "Routing.."
+                                                    let overrides = setupWireLocations arch3 dRefinedAttr
+                                                        (archG, dGlobals) = routeEcp5Globals arch3 dRefinedAttr
+                                                    gDump <- lookupEnv "LPCHK_ROUTE_GLOBALS"
+                                                    case gDump of
+                                                        Just f -> do
+                                                            _ <- evaluate (designNets dGlobals)
+                                                            writeFile f (renderWireDump archG dGlobals)
+                                                        Nothing -> pure ()
+                                                    stopAfterGlobals <- lookupEnv "LAMBDAPNR_GLOBALS_STOP"
+                                                    case stopAfterGlobals of
+                                                        Just _ -> die prog "stopped after globals routing (LAMBDAPNR_GLOBALS_STOP)"
+                                                        Nothing -> pure ()
+                                                    (arch4, dRouted, rngRouted) <- routeRouter1 archG cidOfT overrides (pkGsrclkWire pk) dGlobals rngRefined
+                                                    let cksum3 =
+                                                            checksum
+                                                                (fromIntegral . belIdx)
+                                                                (fromIntegral . wireIdx)
+                                                                (fromIntegral . pipIdx)
+                                                                dRouted
+                                                    let ck3 = cksum3 in ck3 `seq` hPutStrLn stderr (printf "Post-route checksum: 0x%08x" ck3)
+                                                    routeCkFile <- lookupEnv "LP_ROUTE_CK"
+                                                    case routeCkFile of
+                                                        Just f -> do
+                                                            let cellLns =
+                                                                    [ "C " ++ show (unIdString (cellName ci)) ++ " " ++ printf "%08x" (checksumCell (fromIntegral . belIdx) ci)
+                                                                    | ci <- cellsIter dRouted
+                                                                    ]
+                                                                cellAttrLns =
+                                                                    [ "CA " ++ show (unIdString (cellName ci)) ++ " " ++ show (unIdString k) ++ " " ++ T.unpack (pStr v)
+                                                                    | ci <- cellsIter dRouted
+                                                                    , (k, v) <- M.toList (cellAttrs ci)
+                                                                    ]
+                                                                netLns =
+                                                                    [ "N " ++ show (unIdString (netName ni)) ++ " " ++ printf "%08x" (checksumNet (fromIntegral . wireIdx) (fromIntegral . pipIdx) ni)
+                                                                    | ni <- netsIter dRouted
+                                                                    ]
+                                                                attrLns =
+                                                                    [ "A " ++ show (unIdString (netName ni)) ++ " " ++ show (unIdString k) ++ " " ++ T.unpack (pStr v)
+                                                                    | ni <- netsIter dRouted
+                                                                    , (k, v) <- M.toList (netAttrs ni)
+                                                                    ]
+                                                                drvLns =
+                                                                    [ "D " ++ show (unIdString (netName ni)) ++ " " ++ show (maybe (-1) unIdString (prCell (netDriver ni))) ++ " " ++ show (unIdString (prPort (netDriver ni)))
+                                                                    | ni <- netsIter dRouted
+                                                                    ]
+                                                                usrLns =
+                                                                    [ "U " ++ show (unIdString (netName ni)) ++ " " ++ show (maybe (-1) unIdString (prCell u)) ++ " " ++ show (unIdString (prPort u))
+                                                                    | ni <- netsIter dRouted
+                                                                    , u <- activeUsersV (netUsers ni)
+                                                                    ]
+
+                                                            writeFile f (unlines (cellLns ++ cellAttrLns ++ netLns ++ attrLns ++ drvLns ++ usrLns))
+                                                        Nothing -> pure ()
                                                     case lookup "textcfg" opts of
                                                         Just (Just cfgFile) -> do
-                                                            let cc = buildConfig arch3 ai dRefined settings'
+                                                            let cc = buildConfig arch4 ai dRouted settings'
                                                             TIO.writeFile cfgFile (renderChipConfig cc)
                                                             hPutStrLn stderr (prog ++ ": wrote text config to " ++ cfgFile)
-                                                            die prog "router not yet implemented"
-                                                        _ -> die prog "router not yet implemented"
+                                                        _ -> pure ()
                                         _ -> die prog "no JSON design file specified"
 
 -- | @ECP5CommandHandler::customAfterLoad@: parse every @--lpf@ file via

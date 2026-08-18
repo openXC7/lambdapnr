@@ -42,8 +42,14 @@ import Lambdapnr.Kernel.Timing (TimingPortClass (..))
 import Lambdapnr.Kernel.TimingAnalyser (ArrivReqTime (..), CellPortKey (..), PerPort (..), PortDomainPairData (..), TimingAnalyser (..), buildTimingAnalyser, criticalityOf, runTimingAnalyser)
 import Lambdapnr.Arch.Ecp5.ArchCellInfo (ArchInfo, assignArchInfo)
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb, getCellDelayAi, getPortClockingInfoAi, getPortTimingClassAi)
-import Lambdapnr.Arch.Ecp5.Binding (BindState, bindBel, boundBelCell, unbindBel)
+import Lambdapnr.Arch.Ecp5.Binding (BindState, bindBelLut, boundBelCell, unbindBel)
+
 import Lambdapnr.Arch.Ecp5.PlacerHeap (isBelLocValidE)
+
+-- | bindBel including the C++ lutperm_allowed side effect.
+bindBel1 :: Ecp5 -> IdString -> BelId -> PlaceStrength -> BindState -> Design BelId WireId PipId -> (BindState, Design BelId WireId PipId)
+bindBel1 e = bindBelLut (combCtxOf e) (ecp5Chipdb e)
+
 
 -- ---------------------------------------------------------------------------
 -- Bounding box (placer1.cc: BoundingBox)
@@ -713,10 +719,10 @@ trySwapPosition sc st cell newBel =
                                         (bs2, d2) = case otherName of
                                             Nothing -> (bs1, d1)
                                             Just oc -> unbindBel oc newBel bs1 d1
-                                        (bs3, d3) = bindBel cell newBel StrengthWeak bs2 d2
+                                        (bs3, d3) = bindBel1 e cell newBel StrengthWeak bs2 d2
                                         (bs4, d4) = case otherName of
                                             Nothing -> (bs3, d3)
-                                            Just oc -> bindBel oc oldB StrengthWeak bs3 d3
+                                            Just oc -> bindBel1 e oc oldB StrengthWeak bs3 d3
                                         e4 = setEcp5Bind bs4 e
                                         committed = ssNetBounds st
                                         mc1 = addMoveCell sc e4 d4 committed emptyMoveChange cell oldB
@@ -732,10 +738,10 @@ trySwapPosition sc st cell newBel =
                                                     (bs6, d6) = case otherName of
                                                         Nothing -> (bs5, d5)
                                                         Just oc -> unbindBel oc oldB bs5 d5
-                                                    (bs7, d7) = bindBel cell oldB StrengthWeak bs6 d6
+                                                    (bs7, d7) = bindBel1 e cell oldB StrengthWeak bs6 d6
                                                     (bs8, d8) = case otherName of
                                                         Nothing -> (bs7, d7)
-                                                        Just oc -> bindBel oc newBel StrengthWeak bs7 d7
+                                                        Just oc -> bindBel1 e oc newBel StrengthWeak bs7 d7
                                                  in (st{ssE = setEcp5Bind bs8 e, ssD = d8}, 0, 0)
                                             else
                                                 let (overlay, arcCosts, wlDelta, tDelta) = computeCostChanges sc e4 d4 (ssTmg st) committed (ssNetArc st) mc2
@@ -780,10 +786,10 @@ trySwapPosition sc st cell newBel =
                                                                     Nothing -> (bs4, d4)
                                                                     Just oc -> unbindBel oc oldB bs4 d4
                                                                 (bs6, d6) = unbindBel cell newBel bs5 d5
-                                                                (bs7, d7) = bindBel cell oldB StrengthWeak bs6 d6
+                                                                (bs7, d7) = bindBel1 e cell oldB StrengthWeak bs6 d6
                                                                 (bs8, d8) = case otherName of
                                                                     Nothing -> (bs7, d7)
-                                                                    Just oc -> bindBel oc newBel StrengthWeak bs7 d7
+                                                                    Just oc -> bindBel1 e oc newBel StrengthWeak bs7 d7
                                                              in (st{ssE = setEcp5Bind bs8 e, ssD = d8, ssRng = rng1}, 1, 0)
 
 -- | Restore @moved_cells@ to their saved bels (the @swap_fail@ path of
@@ -798,7 +804,7 @@ restoreChain e mmap morder (bs, d) =
                 Nothing -> (b', d')
         stepBind (b', d') name =
             let oldBel = M.findWithDefault (error "restoreChain") name mmap
-             in bindBel name oldBel StrengthWeak b' d'
+             in bindBel1 e name oldBel StrengthWeak b' d'
         (bs1, d1) = foldl' stepUnbind (bs, d) revOrder
      in foldl' stepBind (bs1, d1) revOrder
 
@@ -867,7 +873,7 @@ trySwapChain sc st0 cell newBase =
                         if not (belAvail b' dbBel)
                             then Left (b', d', m', o')
                             else
-                                let (b'', d'') = bindBel dbName dbBel StrengthWeak b' d'
+                                let (b'', d'') = bindBel1 e dbName dbBel StrengthWeak b' d'
                                  in handleDests (b'', d'', m', o', q') rest
                     Just bn ->
                         if M.member bn m'
@@ -899,15 +905,15 @@ trySwapChain sc st0 cell newBase =
                                                                 Just newRootBel ->
                                                                     let clCells = M.findWithDefault [] rootName (scClusterCells sc)
                                                                         (b2, d2, m2, o2) = foldl' unbindDest (b', d', m', o') [(cn, M.findWithDefault (error "cl") cn m') | cn <- clCells]
-                                                                        (b3, d3) = bindBel dbName dbBel StrengthWeak b2 d2
+                                                                        (b3, d3) = bindBel1 e dbName dbBel StrengthWeak b2 d2
                                                                      in handleDests (b3, d3, m2, o2, q' ++ [(rootName, newRootBel)]) rest
                                                 else
                                                     let Just bBel = cellBel bCi
                                                         (b2, d2) = unbindBel bn bBel b' d'
-                                                        (b3, d3) = bindBel bn oldBel StrengthWeak b2 d2
+                                                        (b3, d3) = bindBel1 e bn oldBel StrengthWeak b2 d2
                                                         m2 = M.insert bn bBel m'
                                                         o2 = o' ++ [bn]
-                                                        (b4, d4) = bindBel dbName dbBel StrengthWeak b3 d3
+                                                        (b4, d4) = bindBel1 e dbName dbBel StrengthWeak b3 d3
                                                      in handleDests (b4, d4, m2, o2, q') rest
 
     addMoves _eF _dF _committed _mmapF mc [] = Just mc

@@ -33,6 +33,7 @@ library
     Lambdapnr.Arch.Ecp5.Pack
     Lambdapnr.Arch.Ecp5.PlacerHeap
     Lambdapnr.Arch.Ecp5.Placer1
+    Lambdapnr.Arch.Ecp5.Router
     Lambdapnr.Arch.Ecp5.Types
     Lambdapnr.Kernel.Arch
     Lambdapnr.Kernel.ArchCheck

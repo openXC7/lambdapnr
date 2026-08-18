@@ -19,8 +19,10 @@ implementations agree on observable state:
 -}
 module Lambdapnr.Arch.Ecp5.Binding (
     BindState (..),
+    CombCtx (..),
     emptyBindState,
     bindBel,
+    bindBelLut,
     unbindBel,
     bindWire,
     unbindWire,
@@ -32,13 +34,76 @@ module Lambdapnr.Arch.Ecp5.Binding (
     boundPipNet,
 ) where
 
+import Data.Bits (shiftR, (.&.))
+import Data.Int (Int32)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import qualified Data.Text as T
 
-import Lambdapnr.Arch.Ecp5.Chipdb (Chipdb (..), PipInfo (..), pipAt)
+import Lambdapnr.Arch.Ecp5.Chipdb (BelInfo (..), Chipdb (..), PipInfo (..), belAt, pipAt)
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), Location (..), PipId (..), WireId (..), locAdd)
-import Lambdapnr.Kernel.IdString (IdString)
-import Lambdapnr.Kernel.Netlist (Design, PlaceStrength, clearCellBel, removeNetWire, setCellBel, setNetWire)
+import Lambdapnr.Kernel.IdString (IdString (..), emptyId)
+import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, PlaceStrength, clearCellBel, lookupCell, removeNetWire, setCellBel, setNetWire)
+import Lambdapnr.Kernel.Property (Property (..), propAsString)
+
+{- | The C++ @lutperm_allowed@ side effect of @bindBel@: binding a cell to
+a TRELLIS_COMB bel writes the slice's LutPermRule (0 = NONE, 1 = CARRY,
+2 = ALL) derived from the cell's MODE parameter. The map is never
+cleared on unbind; the final value per slice is the last write.
+-}
+data CombCtx = CombCtx
+    { ccCombTypeIdx :: !Int32
+    -- ^ chipdb bel-type index of @TRELLIS_COMB@ (-1 disables the side
+    -- effect, used by the plain 'bindBel')
+    , ccWidth :: !Int
+    , ccIds :: !(M.Map T.Text IdString)
+    -- ^ constid name -> id (MODE/WCKMUX/WREMUX lookups)
+    }
+
+{- | @bindBel(cell, bel, strength)@: records the binding and sets the
+cell's bel. C++ asserts the bel is free; the Haskell port is total and
+overwrites (callers guard with 'boundBelCell').
+-}
+-- | @bindBel@ without the lutperm side effect (pack sites binding
+-- non-COMB bels).
+bindBel :: IdString -> BelId -> PlaceStrength -> BindState -> Design BelId WireId PipId -> (BindState, Design BelId WireId PipId)
+bindBel = bindBelLut (CombCtx (-1) 0 M.empty) undefined
+
+-- | @bindBel@ mirroring the C++ including the @lutperm_allowed@ write.
+bindBelLut :: CombCtx -> Chipdb -> IdString -> BelId -> PlaceStrength -> BindState -> Design BelId WireId PipId -> (BindState, Design BelId WireId PipId)
+bindBelLut ctx cd cell bel strength st d =
+    (st{bsBel2Cell = M.insert bel cell (bsBel2Cell st), bsLutperm = lut'}, setCellBel cell bel strength d)
+  where
+    lut'
+        | ccCombTypeIdx ctx >= 0 && biType (belAt cd bel) == ccCombTypeIdx ctx =
+            let z = fromIntegral (biZ (belAt cd bel)) :: Int
+                slice = (z `shiftR` 2) `quot` 2
+                idx = (fromIntegral (locY (belLoc bel)) * ccWidth ctx + fromIntegral (locX (belLoc bel))) * 4 + slice
+             in M.insert idx (ruleOfCell ctx d cell) (bsLutperm st)
+        | otherwise = bsLutperm st
+
+-- | The cell's comb LutPermRule from its MODE parameter (mirrors
+-- @assign_arch_info_for_cell@'s TRELLIS_COMB branch).
+ruleOfCell :: CombCtx -> Design BelId WireId PipId -> IdString -> Int
+ruleOfCell ctx d cell =
+    case lookupCell cell d of
+        Nothing -> 0
+        Just ci ->
+            let mode = maybe "LOGIC" propAsString (M.lookup modeId (cellParams ci))
+                flags :: Int
+                flags
+                    | mode == "CCU2" = 0x01
+                    | mode == "DPRAM" = 0x02
+                    | mode == "RAMW_BLOCK" = 0x40
+                    | otherwise = 0
+             in if (flags .&. 0x02) /= 0 || (flags .&. 0x40) /= 0
+                    then 0
+                    else
+                        if (flags .&. 0x01) /= 0
+                            then 1
+                            else 2
+  where
+    modeId = M.findWithDefault emptyId "MODE" (ccIds ctx)
 
 -- | The binding maps. All keyed by the id types directly (the C++ flat
 -- vectors indexed by tile-base offsets are a memory optimization; the
@@ -51,11 +116,13 @@ data BindState = BindState
     -- ^ src wire -> number of bound pips leaving it (nonzero entries)
     , bsWirePip :: !(Map WireId PipId)
     -- ^ dst wire -> uphill pip (the arch-side mirror of @net->wires@)
+    , bsLutperm :: !(Map Int Int)
+    -- ^ slice index -> LutPermRule (0 NONE, 1 CARRY, 2 ALL)
     }
     deriving (Eq, Show)
 
 emptyBindState :: BindState
-emptyBindState = BindState M.empty M.empty M.empty M.empty M.empty
+emptyBindState = BindState M.empty M.empty M.empty M.empty M.empty M.empty
 
 -- | Fanout of a wire (0 when nothing is bound).
 wireFanoutOf :: WireId -> BindState -> Int
@@ -72,14 +139,6 @@ boundWireNet w = M.lookup w . bsWire2Net
 -- | The net bound to a pip.
 boundPipNet :: PipId -> BindState -> Maybe IdString
 boundPipNet p = M.lookup p . bsPip2Net
-
-{- | @bindBel(cell, bel, strength)@: records the binding and sets the
-cell's bel. C++ asserts the bel is free; the Haskell port is total and
-overwrites (callers guard with 'boundBelCell').
--}
-bindBel :: IdString -> BelId -> PlaceStrength -> BindState -> Design BelId WireId PipId -> (BindState, Design BelId WireId PipId)
-bindBel cell bel strength st d =
-    (st{bsBel2Cell = M.insert bel cell (bsBel2Cell st)}, setCellBel cell bel strength d)
 
 -- | @unbindBel(cell, bel)@: clears both sides.
 unbindBel :: IdString -> BelId -> BindState -> Design BelId WireId PipId -> (BindState, Design BelId WireId PipId)

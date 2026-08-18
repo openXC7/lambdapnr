@@ -24,6 +24,7 @@ module Lambdapnr.Arch.Ecp5
   , setEcp5Bind
   , ecp5IdTable
   , ecp5TimingDb
+  , combCtxOf
   , tileIndex
   , tileXY
   , locTypeOfTile
@@ -49,6 +50,7 @@ import Control.Exception (SomeException, try)
 import Control.Monad (foldM, unless)
 import Data.Char (isSpace)
 import qualified Data.ByteString as BS
+import Data.Bits (shiftR, (.&.))
 import Data.Functor ((<&>))
 import Data.Int (Int16, Int32)
 import qualified Data.Map.Strict as M
@@ -59,7 +61,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import System.IO.Unsafe (unsafePerformIO)
 
-import Lambdapnr.Arch.Ecp5.Binding (BindState (..), boundBelCell, boundPipNet, boundWireNet, emptyBindState, wireFanoutOf)
+import Lambdapnr.Arch.Ecp5.Binding (BindState (..), CombCtx (..), boundBelCell, boundPipNet, boundWireNet, emptyBindState, wireFanoutOf)
 import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..), getCellDelayFor, getPortClockingInfoFor, getPortTimingClassFor)
 import Lambdapnr.Arch.Ecp5.Chipdb
 import Lambdapnr.Arch.Ecp5.ConstIds
@@ -116,6 +118,14 @@ ecp5Bind = e5Bind
 -- back into the arch record).
 setEcp5Bind :: BindState -> Ecp5 -> Ecp5
 setEcp5Bind bs e = e{e5Bind = bs}
+
+-- | The @CombCtx@ for @bindBelLut@ (TRELLIS_COMB bel-type index +
+-- width + constid name table).
+combCtxOf :: Ecp5 -> CombCtx
+combCtxOf e =
+    let combId = M.findWithDefault emptyId "TRELLIS_COMB" (e5ConstIdByName e)
+        idx = fromIntegral (M.findWithDefault (-1) combId (e5ConstIdIdx e)) :: Int32
+     in CombCtx idx (cdWidth (e5Chipdb e)) (e5ConstIdByName e)
 
 -- | The arch's id table (share it with the context via 'newContextWith').
 ecp5IdTable :: Ecp5 -> IdTable
@@ -369,7 +379,7 @@ instance Arch Ecp5 where
   getPipLocation e p =
     Loc (fromIntegral (locX (pipLoc p))) (fromIntegral (locY (pipLoc p))) 0
   isPipInverting _ _ = False
-  checkPipAvail e p = not (M.member p (bsPip2Net (e5Bind e)))
+  checkPipAvail e p = not (M.member p (bsPip2Net (e5Bind e))) && not (isPipBlockedE e p)
   getBoundPipNet e p = boundPipNet p (e5Bind e)
 
   -- Delay model ---------------------------------------------------------
@@ -538,6 +548,25 @@ getTileByType e typ =
      in case V.findIndex (\tile -> typ `elem` map tnName (V.toList (tiTileNames tile))) (cdTileInfos cd) of
             Nothing -> Nothing
             Just i -> tnName <$> V.find (\tn -> cdTiletypeNames cd V.! fromIntegral (tnTypeIdx tn) == typ) (tiTileNames (cdTileInfos cd V.! i))
+
+-- | @is_pip_blocked@: LUT-permutation pips are blocked unless the
+-- slice's @lutperm_allowed@ rule permits the swap. @disable_router_lutperm@
+-- is always false in this flow. Rule: 0 = NONE (blocked), 1 = CARRY
+-- (A/B and C/D swappable within pairs), 2 = ALL (any permutation).
+isPipBlockedE :: Ecp5 -> PipId -> Bool
+isPipBlockedE e p =
+    let flags = fromIntegral (piLutpermFlags (pipAt cd p)) :: Int
+     in if (flags .&. 0x4000) /= 0
+            then
+                let lut = (flags `shiftR` 4) .&. 7
+                    outPin = (flags `shiftR` 2) .&. 3
+                    inPin = flags .&. 3
+                    sliceIdx = (fromIntegral (locY (pipLoc p)) * cdWidth cd + fromIntegral (locX (pipLoc p))) * 4 + lut `quot` 2
+                    rule = M.findWithDefault 0 sliceIdx (bsLutperm (e5Bind e))
+                 in rule == 0 || (rule == 1 && (outPin `quot` 2) /= (inPin `quot` 2))
+            else False
+  where
+    cd = e5Chipdb e
 
 -- | @get_wire_basename@: the raw wire name from the chipdb.
 getWireBasename :: Ecp5 -> WireId -> Text

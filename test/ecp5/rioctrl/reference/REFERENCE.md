@@ -21,7 +21,7 @@ chipdb-25k.bin). Seed 1, speed grade 6, package CABGA256.
 
 | Quantity | Value |
 | --- | --- |
-| Checksum (after packing) | `0xc76929e2` |
+| Checksum (after packing) | `0x889a4909` (lineage B, current oracle; the historical `0xc76929e2` was a different nextpnr build) |
 | Top module cells | 7,282 |
 | LUT4 | 3,893 (= "logic LUTs" in the pack log) |
 | TRELLIS_FF | 1,910 (= "Total DFFs") |
@@ -36,6 +36,8 @@ chipdb-25k.bin). Seed 1, speed grade 6, package CABGA256.
 | nets (netnames) | 5,631 |
 | top ports | clk25 (input, LVCMOS33, pin A7 per the LPF) |
 | Fmax (post-PnR) | `crg_clkout` 69.73/85.62 MHz, jtag tck 191.39/179.21 MHz (two runs) |
+| Checksum (post-place) | `0x519b603f` (lineage B, with LPF) / `0xf1975059` (lineage A, no LPF) |
+| Checksum (post-route) | `0x728f80cc` (lineage B, with LPF) / `0x94a9ffe1` (lineage A, no LPF) |
 
 ## Files
 

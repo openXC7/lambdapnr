@@ -24,6 +24,7 @@ module Lambdapnr.Arch.Ecp5.Chipdb
   , CellPropDelay (..)
   , CellSetupHold (..)
   , PipDelay (..)
+  , GlobalInfo (..)
   , parseChipdb
   , tileIndex
   , tileXY
@@ -31,6 +32,7 @@ module Lambdapnr.Arch.Ecp5.Chipdb
   , belAt
   , wireAt
   , pipAt
+  , globalInfoAtLoc
   ) where
 
 import Control.Monad (unless, when)
@@ -59,7 +61,18 @@ data Chipdb = Chipdb
   , cdPios :: !(V.Vector PioInfo)
   , cdTileInfos :: !(V.Vector TileInfo)
   , cdSpeedGrades :: !(V.Vector SpeedGrade)
+  , cdGlobalInfo :: !(V.Vector GlobalInfo)
   }
+
+-- | @GlobalInfoPOD@: global routing spine/tap metadata per grid location.
+data GlobalInfo = GlobalInfo
+  { giTapCol :: !Int16
+  , giTapDir :: !Int8
+  , giQuad :: !Int8
+  , giSpineRow :: !Int16
+  , giSpineCol :: !Int16
+  }
+  deriving (Eq, Show)
 
 data LocationType = LocationType
   { ltBels :: !(V.Vector BelInfo)
@@ -223,6 +236,11 @@ wireAt cd w = ltWires (locTypeOfTile cd (tileIndex cd (wireLoc w))) V.! fromInte
 -- | Pip data for a pip id.
 pipAt :: Chipdb -> PipId -> PipInfo
 pipAt cd p = ltPips (locTypeOfTile cd (tileIndex cd (pipLoc p))) V.! fromIntegral (pipIdx p)
+
+-- | @Arch::global_info_at_loc@: global routing metadata for a grid location.
+globalInfoAtLoc :: Chipdb -> Location -> GlobalInfo
+globalInfoAtLoc cd (Location x y) =
+  cdGlobalInfo cd V.! (fromIntegral y * cdWidth cd + fromIntegral x)
 
 -- ---------------------------------------------------------------------------
 -- Little-endian field readers over a strict ByteString at absolute offsets.
@@ -428,6 +446,16 @@ parsePipDelay bs p =
     , pdMaxFanout = i32 bs (p + 12)
     }
 
+parseGlobalInfo :: BS.ByteString -> Off -> GlobalInfo
+parseGlobalInfo bs p =
+  GlobalInfo
+    { giTapCol = i16 bs p
+    , giTapDir = i8 bs (p + 2)
+    , giQuad = i8 bs (p + 3)
+    , giSpineRow = i16 bs (p + 4)
+    , giSpineCol = i16 bs (p + 6)
+    }
+
 parseSpeedGrade :: BS.ByteString -> Off -> SpeedGrade
 parseSpeedGrade bs p =
   SpeedGrade
@@ -507,4 +535,5 @@ parseChipdb bs = do
       , cdPios = vec (parsePioInfo bs) 16 pioLen pioStart
       , cdTileInfos = vec (parseTileInfo bs) 8 tilLen tilStart
       , cdSpeedGrades = vec (parseSpeedGrade bs) 16 sgLen sgStart
+      , cdGlobalInfo = vec (parseGlobalInfo bs) 8 glbLen glbStart
       }

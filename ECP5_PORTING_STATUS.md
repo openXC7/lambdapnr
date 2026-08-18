@@ -105,6 +105,7 @@ rioctrl reference design, pass by pass.
 | 12 | Placer stage 3: timing engine + initial iterations at bit-exact parity | 85cd132 |
 | 13 | Placer: HeAP main loop (spread/legalise) at bit-exact parity through 20 iterations | 4512822 |
 | 14 | Placer: placer1 SA refine — IT1-23 bit-exact, SA breaks at iter 23 exactly like C++; **post-place checksum at parity** (0xf1975059) after porting `fixupHierarchy` interning + `archInfoToAttributes` | 7ef8b5c |
+| 15 | **Router: `route_ecp5_globals` + router1 A* ripup-retry at bit-exact parity** — post-route checksums match on both lineages (0x94a9ffe1 / 0x728f80cc), 32675-arc pop trace identical, per-net wire dumps 0-diff | (uncommitted) |
 
 Working tree is dirty: Placer1.hs (**new** — full placer1 SA refine port), PlacerHeap.hs
 (isBelLocValidE/dspLocationValid exports + restore unbind fix), Main.hs (place1Refine +
@@ -118,7 +119,14 @@ trim/rebuild local-name interning (was a no-op)**; **new `archInfoToAttributes`
 (renameCellPort overwrites instead of appending a duplicate port to cellPortOrder,
 matching C++ `dict operator[]`; restored the `removeNetDriver` export; **new
 `setNetAttr`/`delCellAttr`**), cabal (exposes the Placer1 module),
-ECP5_PORTING_STATUS.md. The placer1 workstream is **un-paused: milestone 14 is done**.
+ECP5_PORTING_STATUS.md. The placer1 workstream is done (milestone 14). The router workstream (milestone
+15) is in the tree: **Router.hs (new — `route_ecp5_globals` + router1 engine)**,
+Chipdb.hs (`location_glbinfo`/`GlobalInfo` parsing), Binding.hs (`bsLutperm` +
+`bindBelLut` mirroring the C++ `lutperm_allowed` bindBel side effect), Arch.hs
+(`isPipBlockedE` lutperm check in `checkPipAvail`, `combCtxOf`), Pack.hs
+(`pkGsrclkWire` export), Main.hs (route() flow + post-place `archInfoToAttributes`
+re-run + LP_ROUTE_CK/LP_ROUTE_RESUME hooks), Placer1/PlacerHeap (bind sites go
+through `bindBelLut`).
 
 ## Packer checksum status (rioctrl full design, 12k)
 
@@ -416,12 +424,18 @@ moves.
    divergence was in the pack tail (`fixupHierarchy` local-name interning +
    `archInfoToAttributes` attrs), not in the SA. Post-place checksums now match on
    both lineages (0xf1975059 / 0x519b603f) with 0 per-entity diffs.
-2. **Router (router1)** — global clock routing (route_globals) + general
-   BFS ripup-retry; wire/pip binding; post-route 0x94a9ffe1 (lineage A) /
-   0x728f80cc (lineage B).
-3. **Packed `.config` comparison** — with placement/routing in place, the
-   textcfg should match `rioctrl_controller.textcfg` byte-for-byte; the
-   pack-stage config currently differs only in the placement/routing section.
+2. ~~**Router (router1)** — post-route checksums 0x94a9ffe1 / 0x728f80cc~~ **RESOLVED**:
+   `route_ecp5_globals` (DCC/DCSC clock nets onto the quadrant spines, per-user
+   tile-global backtrace, ECLK sources) + the full router1 A* (libstdc++-exact
+   priority-queue heaps, `dst_to_arc` dedup, `wire_loc_overrides`/`gsrclk`
+   estimateDelay, lutperm `is_pip_blocked` in `checkPipAvail`, the
+   `lutperm_allowed` map written by placer `bindBel` calls). Post-route checksums
+   match on both lineages; the 32675-pop arc trace and the per-net wire/pip dumps
+   are 0-diff against the oracle.
+3. **Bitgen `.config` comparison** — with placement/routing at parity, the
+   textcfg now differs only in the bitgen's enum/word ORDER (the CIB.JxMUX
+   enum insertion order etc. — the Haskell `Bitgen.hs` config accumulation
+   order must match `bitstream.cc`'s); sets of entries already agree.
 4. Remove debug scaffolding: CANADD/SC/CHAINS/SPLIT traces, `LP_DUMP_FFS_ORDER`
    + `LP_DUMP_ORDER` order dumps, packFfs dump, `deepseq` hacks, TBL dump
    (`lambdapnrDebugDump`), and the placer dumps (_dbgCut/_dbgPiv/_dbgBc/
