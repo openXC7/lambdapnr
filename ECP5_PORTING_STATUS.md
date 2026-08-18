@@ -203,8 +203,8 @@ pass, including the final packing checksum**:
 | generate_constraints | Pack.hs | ✓ ported; checksum-neutral; state covered by the globals diff (0 entries) |
 | promote_globals | Pack.hs | ✓ get_clocks + insert_dcc + place_dcc_dcs + DCC metrics + has_short_route; DCCA placement matches C++ (LDCC3/TDCC0) |
 | fixup_hierarchy | Pack.hs | ✓ ported: trim_hierarchy + rebuild_hierarchy local-name interning with `$N` uniquification (the intern sequence between globals and BEL_STRENGTH — previously a no-op) |
-| archInfoToAttributes | Pack.hs | ✓ NEXTPNR_BEL/BEL_STRENGTH on placed cells (BEL erased) + ROUTING="" on every net; BEL_STRENGTH interned in C++ order (after the first bel-cell's bel-name interns) |
-| Bitgen cell writers (IO/DCC/PLL/DSP/DCU) | Bitgen.hs, DcuBitstream.hs | not started |
+| archInfoToAttributes | Pack.hs, app/Main.hs | ✓ NEXTPNR_BEL/BEL_STRENGTH on placed cells (BEL erased) + ROUTING="" on every net at pack time; the post-route tail re-runs it with real ROUTING strings (`wire;pip;strength` per net wire, in netWireOrder); BEL_STRENGTH interned in C++ order (after the first bel-cell's bel-name interns) |
+| Bitgen cell writers (IO/DCC/PLL/DSP/DCU) | Bitgen.hs, DcuBitstream.hs | ✓ (milestone 16) — textcfg byte-identical on both lineages; permute_lut/CCU2 fix, JTAGG tile lookup, bram INITVAL/init data, PLL dynamic params, EBR/DSP tile groups, FF LSR/CLK null-net case |
 | Base configs | BaseConfigs.hs | ✓ |
 | `.config` writer | Config.hs, Bitgen.hs | ✓ validated via ecppack on earlier milestone |
 | Placer: placeConstraints/seed/buildFastBels/hpwl | Arch/Ecp5/PlacerHeap.hs | ✓ seed anchors exact (mini 33/1833; full 3838/244753); seed dump byte-identical |
@@ -214,7 +214,8 @@ pass, including the final packing checksum**:
 | Placer: CutSpreader | PlacerHeap.hs `cutSpread` | ✓ bit-exact: findRegions/expand/cut region inventory + cut sequences match C++; growD overuse guard fixed (top-edge region +y grow) |
 | Placer: StrictLegaliser | PlacerHeap.hs `strictLegalise` | ✓ bit-exact: legal anchors match C++ (iter5 55015, iter20 45044) |
 | Placer: placer1 SA refine | Placer1.hs `place1Refine` | ✓ engine ported; initial cost (wirelen 43706, timing 392.00073554665477), move counters (MV1 nmove 29548 / naccept 2823), and IT1-23 dumps bit-exact (SA breaks at iter 23 exactly like C++); **post-place checksum matches (0xf1975059, lineage A; 0x519b603f, lineage B); per-cell/per-net checksum dumps 0 diffs (15620 entities)** |
-| Router (router1) | — | not started |
+| Router (router1) | Router.hs | ✓ (milestone 15) — `route_ecp5_globals` + router1 A* at post-route checksum parity on both lineages; milestone 19 added the exact libstdc++ `std::sort` introsort for the global toroute order (ROUTING strings) and the ordered arc-wire pool |
+| Output writers (`--write`/`--sdf`/`--report`) | Kernel/JsonWrite.hs, Kernel/Sdf.hs, Kernel/TimingReport.hs, Kernel/CFormat.hs, Kernel/Introsort.hs | ✓ (milestone 19) — write.json/sdf/report.json byte-identical on both lineages; C %g/%.17g via dyadic decimal expansion; json11 sorted keys + dict-ordered attrs/params/ports; DELAYFILE/CELL/IOPATH/SETUPHOLD emission |
 | Tests | test/ (85 tests) | ✓ 85/85 passing (stale constructors in 5 test files fixed this session) |
 
 ## Key bugs fixed this session (packer/ffs)
