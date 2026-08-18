@@ -29,7 +29,6 @@ import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import System.IO.Unsafe (unsafePerformIO)
 
 import Lambdapnr.Arch.Ecp5 hiding (locX, locY, locZ)
 import Lambdapnr.Arch.Ecp5.ArchCellInfo (ArchInfo, CombInfo (..), RamInfo (..), combFlag, hasFlag, lookupComb, lookupRam, CombFlags (CombCarry))
@@ -41,7 +40,7 @@ import Lambdapnr.Arch.Ecp5.Config
 import Lambdapnr.Arch.Ecp5.DcuBitstream (dcuWords)
 import Lambdapnr.Arch.Ecp5.Types
 import Lambdapnr.Kernel.Arch hiding (locX, locY, locZ)
-import Lambdapnr.Kernel.IdString (IdString, emptyId, idToText)
+import Lambdapnr.Kernel.IdString (IdString, emptyId, idByName, idToText)
 import Lambdapnr.Kernel.Netlist
 import Lambdapnr.Kernel.Property (Property (..), propAsInt64, propIsString, propAsString)
 
@@ -192,7 +191,7 @@ buildConfig e ai design settings =
     b0 = Bitgen e ai design settings cc0 M.empty S.empty S.empty S.empty False
 
     -- DCU tie-off clearing (before pips)
-    b1 = foldl clearDcuTies b0 (M.elems (designCells design))
+    b1 = foldl clearDcuTies b0 (cellsIter design)
     -- metadata
     b2 = b1{bgCfg = (bgCfg b1){ccMetadata = ["Part: " <> fullChipName args]}}
     -- bound pips
@@ -200,7 +199,7 @@ buildConfig e ai design settings =
     -- IO banks
     b4 = initIoBanks b3
     -- cells
-    b5 = foldl addCellConfig b4 (M.elems (designCells design))
+    b5 = foldl addCellConfig b4 (cellsIter design)
     -- SYSCONFIG settings
     b6 = foldl addSysConfig b5 (M.toList settings)
     -- tile name fixups
@@ -281,7 +280,7 @@ buildConfig e ai design settings =
 
     -- constid helpers
     cid :: Text -> IdString
-    cid t = fromMaybe emptyId (M.lookup t (tdConstIdByName (ecp5TimingDb e)))
+    cid t = fromMaybe (fromMaybe emptyId (M.lookup t (tdConstIdByName (ecp5TimingDb e)))) (idByName (ecp5IdTable e) t)
 
     -- param helpers (str_or_default / int_or_default / intstr_or_default)
     strParam ci name def =
@@ -333,7 +332,7 @@ buildConfig e ai design settings =
                      in if take 2 str /= "0x"
                             then replicate length' False
                             else parseHex str length'
-                | otherwise -> take length' (intToBits (fromIntegral (propAsInt64 p)) length' ++ repeat False)
+                | otherwise -> take length' (map (== '1') (T.unpack (pStr p)) ++ repeat False)
     parseHex str length' =
         let hexChars = reverse (drop 2 str)
             nibble c = fromMaybe 0 (T.findIndex (== toUpper c) "0123456789ABCDEF")
@@ -375,11 +374,13 @@ buildConfig e ai design settings =
         go [wire] b
       where
         cibRe name =
-            let s = T.unpack name
-                rest = T.drop 1 name
-             in case s of
-                    c : _ -> c == 'J' && any (\p -> T.isPrefixOf p rest) ["A", "B", "C", "D", "CE", "LSR", "CLK"] && T.length name >= 2 && T.last name `elem` ("01234567" :: String)
-                    [] -> False
+            -- the C++ std::regex_match "J([A-D]|CE|LSR|CLK)[0-7]": a FULL
+            -- match — 'J' + one alternative + exactly one digit.
+            case T.unpack name of
+                [c, a, d] -> c == 'J' && a `elem` ("ABCD" :: String) && d `elem` ("01234567" :: String)
+                [c, a, b, d] -> c == 'J' && [a, b] == "CE" && d `elem` ("01234567" :: String)
+                [c, a, b, cc, d] -> c == 'J' && [a, b, cc] `elem` ["LSR", "CLK"] && d `elem` ("01234567" :: String)
+                _ -> False
 
         go queue b' =
             case queue of
@@ -389,15 +390,14 @@ buildConfig e ai design settings =
                      in if cibRe basename
                         then
                             let outValue
-                                    | T.isPrefixOf "JCE" basename = True
-                                    | T.isPrefixOf "JCLK" basename || T.isPrefixOf "JLSR" basename = True
+                                    | T.isPrefixOf "JCLK" basename || T.isPrefixOf "JLSR" basename = False
                                     | otherwise = value
                                 tiles = getTilesAtLoc e (fromIntegral (locY (wireLoc cibsig))) (fromIntegral (locX (wireLoc cibsig)))
                              in case [tn | (tn, ty) <- tiles, T.isPrefixOf "CIB" ty || T.isPrefixOf "VCIB" ty] of
-                                    [tile] ->
+                                    tile : _ ->
                                         let tc = M.findWithDefault emptyTileConfig tile (ccTiles (bgCfg b'))
                                          in b'{bgCfg = (bgCfg b'){ccTiles = M.insert tile (addEnum ("CIB." <> basename <> "MUX") (if outValue then "1" else "0") tc) (ccTiles (bgCfg b'))}}
-                                    _ -> b'
+                                    [] -> b'
                         else go (rest ++ map (getPipSrcWire e) (getPipsUphill e cibsig)) b'
 
     -- tile/wire lookup wrappers (the Ecp5.hs variants return Maybe)
@@ -415,6 +415,11 @@ buildConfig e ai design settings =
     addTileGroup b tg = b{bgCfg = (bgCfg b){ccTileGroups = ccTileGroups (bgCfg b) ++ [tg]}}
 
     -- get a cell's port net
+    -- The C++ iterates @ci->ports@ (a nextpnr dict = reverse insertion
+    -- order); @cellPortOrder@ is the insertion order, so reverse it.
+    portOrderRefs :: CellInfo BelId WireId PipId -> [(IdString, PortInfo)]
+    portOrderRefs ci = [ (p, fromMaybe (error "bitgen: port missing") (M.lookup p (cellPorts ci))) | p <- reverse (cellPortOrder ci) ]
+
     cellPortNet ci p = case portNet =<< M.lookup (cid p) (cellPorts ci) of
         Just n -> Just n
         Nothing -> Nothing
@@ -425,17 +430,17 @@ buildConfig e ai design settings =
     permuteLut :: CellInfo BelId WireId PipId -> S.Set Text -> Int -> (S.Set Text, Int)
     permuteLut cell usedPhysPins origInit =
         let ports = [("A", 0), ("B", 1), ("C", 2), ("D", 3)]
-            physToLog = [ physToLogOf i | i <- [0 .. 3] ]
+            -- C++: for each bound uphill pip of pin i's wire, push i into
+            -- phys_to_log[from_pin] (non-permuting: from_pin = i).
             physToLogOf i =
                 let pinWire = belPinWireOf (fromMaybe (error "unplaced comb") (cellBel cell)) (cid (fst (ports !! i)))
-                 in concat
-                        [ if piLutpermFlags pi .&. 0x4000 == 0
-                            then [i] -- non-permuting
-                            else [fromIntegral (piLutpermFlags pi .&. 0x3)] -- permuting: from_pin
-                        | p <- getPipsUphill e pinWire
-                        , boundPipNet p (ecp5Bind e) /= Nothing
-                        , let pi = pipAt (ecp5Chipdb e) p
-                        ]
+                 in [ ( if lp .&. 0x4000 == 0 then i else fromIntegral (lp .&. 0x3), i )
+                    | p <- getPipsUphill e pinWire
+                    , boundPipNet p (ecp5Bind e) /= Nothing
+                    , let lp = piLutpermFlags (pipAt (ecp5Chipdb e) p)
+                    ]
+            contribs = concat [ physToLogOf i | i <- [0 .. 3] ]
+            physToLog = [ [ i | (fp, i) <- contribs, fp == j ] | j <- [0 .. 3] ]
             usedPins = S.fromList [ fst (ports !! i) | i <- [0 .. 3], not (null (physToLog !! i)) ]
             -- CCU2 carry: keep the two halves split
             physToLog' =
@@ -464,7 +469,7 @@ buildConfig e ai design settings =
                 let Loc bx by _ = getBelLocation e bel
                     tname = ttl e (fromIntegral by) (fromIntegral bx) "PLC2"
                     z = fromIntegral (belZOf bel) `div` 4
-                    slice = "SLICE" <> T.singleton ("ABCD" !! (z `mod` 4))
+                    slice = "SLICE" <> T.singleton ("ABCD" !! (z `div` 2))
                     lc = T.pack (show (z `mod` 2))
                     mode = strParam ci "MODE" "LOGIC"
                  in if mode == "RAMW_BLOCK"
@@ -500,7 +505,7 @@ buildConfig e ai design settings =
                 let Loc bx by _ = getBelLocation e bel
                     tname = ttl e (fromIntegral by) (fromIntegral bx) "PLC2"
                     z = fromIntegral (belZOf bel) `div` 4
-                    slice = "SLICE" <> T.singleton ("ABCD" !! (z `mod` 4))
+                    slice = "SLICE" <> T.singleton ("ABCD" !! (z `div` 2))
                     lc = T.pack (show (z `mod` 2))
                     b1 = addTileEnum b tname (slice <> ".GSR") (strParam ci "GSR" "ENABLED")
                     b2 = addTileEnum b1 tname (slice <> ".REG" <> lc <> ".SD") (intstrParam ci "SD" "0")
@@ -509,24 +514,24 @@ buildConfig e ai design settings =
                     b5 = addTileEnum b4 tname (slice <> ".CEMUX") (strParam ci "CEMUX" "1")
                     lsrnet = cellPortNet ci "LSR"
                     b6 =
-                        case (getWireByLocBasename e (Location (fromIntegral bx) (fromIntegral by)) "LSR0", lsrnet) of
-                            (Just w, Just n) | getBoundWireNet e w == Just n ->
+                        case getWireByLocBasename e (Location (fromIntegral bx) (fromIntegral by)) "LSR0" of
+                            Just w | getBoundWireNet e w == lsrnet ->
                                 addTileEnum (addTileEnum b5 tname "LSR0.SRMODE" (strParam ci "SRMODE" "LSR_OVER_CE")) tname "LSR0.LSRMUX" (strParam ci "LSRMUX" "LSR")
                             _ -> b5
                     b7 =
-                        case (getWireByLocBasename e (Location (fromIntegral bx) (fromIntegral by)) "LSR1", lsrnet) of
-                            (Just w, Just n) | getBoundWireNet e w == Just n ->
+                        case getWireByLocBasename e (Location (fromIntegral bx) (fromIntegral by)) "LSR1" of
+                            Just w | getBoundWireNet e w == lsrnet ->
                                 addTileEnum (addTileEnum b6 tname "LSR1.SRMODE" (strParam ci "SRMODE" "LSR_OVER_CE")) tname "LSR1.LSRMUX" (strParam ci "LSRMUX" "LSR")
                             _ -> b6
                     clknet = cellPortNet ci "CLK"
                     b8 =
-                        case (getWireByLocBasename e (Location (fromIntegral bx) (fromIntegral by)) "CLK0", clknet) of
-                            (Just w, Just n) | getBoundWireNet e w == Just n ->
+                        case getWireByLocBasename e (Location (fromIntegral bx) (fromIntegral by)) "CLK0" of
+                            Just w | getBoundWireNet e w == clknet ->
                                 addTileEnum b7 tname "CLK0.CLKMUX" (strParam ci "CLKMUX" "CLK")
                             _ -> b7
                     b9 =
-                        case (getWireByLocBasename e (Location (fromIntegral bx) (fromIntegral by)) "CLK1", clknet) of
-                            (Just w, Just n) | getBoundWireNet e w == Just n ->
+                        case getWireByLocBasename e (Location (fromIntegral bx) (fromIntegral by)) "CLK1" of
+                            Just w | getBoundWireNet e w == clknet ->
                                 addTileEnum b8 tname "CLK1.CLKMUX" (strParam ci "CLKMUX" "CLK")
                             _ -> b8
                  in b9
@@ -798,16 +803,16 @@ buildConfig e ai design settings =
                     tg0 = TileGroup (getBramTiles bel) emptyTileConfig
                     tg1 =
                         if isPdp
-                            then tg0{tgConfig = addEnum (ebr <> ".MODE") "PDPW16KD" (addEnum (ebr <> ".PDPW16KD.DATA_WIDTH_R") (intstrParam ci "DATA_WIDTH_B" "36") (tgConfig tg0))}
-                            else tg0{tgConfig = addEnum (ebr <> ".MODE") "DP16KD" (addEnum (ebr <> ".DP16KD.DATA_WIDTH_A") (intstrParam ci "DATA_WIDTH_A" "18") (addEnum (ebr <> ".DP16KD.DATA_WIDTH_B") (intstrParam ci "DATA_WIDTH_B" "18") (addEnum (ebr <> ".DP16KD.WRITEMODE_A") (strParam ci "WRITEMODE_A" "NORMAL") (addEnum (ebr <> ".DP16KD.WRITEMODE_B") (strParam ci "WRITEMODE_B" "NORMAL") (tgConfig tg0)))))}
+                            then tg0{tgConfig = addEnum (ebr <> ".PDPW16KD.DATA_WIDTH_R") (intstrParam ci "DATA_WIDTH_B" "36") (addEnum (ebr <> ".MODE") "PDPW16KD" (tgConfig tg0))}
+                            else tg0{tgConfig = addEnum (ebr <> ".DP16KD.WRITEMODE_B") (strParam ci "WRITEMODE_B" "NORMAL") (addEnum (ebr <> ".DP16KD.WRITEMODE_A") (strParam ci "WRITEMODE_A" "NORMAL") (addEnum (ebr <> ".DP16KD.DATA_WIDTH_B") (intstrParam ci "DATA_WIDTH_B" "18") (addEnum (ebr <> ".DP16KD.DATA_WIDTH_A") (intstrParam ci "DATA_WIDTH_A" "18") (addEnum (ebr <> ".MODE") "DP16KD" (tgConfig tg0)))))}
                     csdA0 = strToBits (strParam ci "CSDECODE_A" "0b000") 3
                     csdB0 = strToBits (strParam ci "CSDECODE_B" "0b000") 3
-                    tg2 = tg1{tgConfig = addEnum (ebr <> ".REGMODE_A") (strParam ci "REGMODE_A" "NOREG") (addEnum (ebr <> ".REGMODE_B") (strParam ci "REGMODE_B" "NOREG") (addEnum (ebr <> ".RESETMODE") (strParam ci "RESETMODE" "SYNC") (addEnum (ebr <> ".ASYNC_RESET_RELEASE") (strParam ci "ASYNC_RESET_RELEASE" "SYNC") (addEnum (ebr <> ".GSR") (strParam ci "GSR" "DISABLED") (tgConfig tg1)))))}
+                    tg2 = tg1{tgConfig = addEnum (ebr <> ".GSR") (strParam ci "GSR" "DISABLED") (addEnum (ebr <> ".ASYNC_RESET_RELEASE") (strParam ci "ASYNC_RESET_RELEASE" "SYNC") (addEnum (ebr <> ".RESETMODE") (strParam ci "RESETMODE" "SYNC") (addEnum (ebr <> ".REGMODE_B") (strParam ci "REGMODE_B" "NOREG") (addEnum (ebr <> ".REGMODE_A") (strParam ci "REGMODE_A" "NOREG") (tgConfig tg1)))))}
                     wid = attrInt ci "WID" 0
                     tg3 = tg2{tgConfig = addWord (ebr <> ".WID") (intToBits (bitReverse wid 9) 9) (tgConfig tg2)}
                     -- tie signals (mutating the cell params in the design,
                     -- like the C++ writes into ci->params)
-                    (tg4, b') = foldl tiePort (tg3, b) (M.toList (cellPorts ci))
+                    (tg4, b') = foldl tiePort (tg3, b) (portOrderRefs ci)
                     tiePort (tgAcc, bAcc) (p, pi) =
                         let pname = idToText (ecp5IdTable e) p
                             portNet' = portNet pi
@@ -838,13 +843,13 @@ buildConfig e ai design settings =
                     -- invert CSDECODE for INV muxes
                     csdA = [if strParam ci' ("CSA" <> showBit <> "MUX") ("CSA" <> showBit) == "INV" then not b2 else b2 | (showBit, b2) <- zip ["0", "1", "2"] csdA0]
                     csdB = [if strParam ci' ("CSB" <> showBit <> "MUX") ("CSB" <> showBit) == "INV" then not b2 else b2 | (showBit, b2) <- zip ["0", "1", "2"] csdB0]
-                    tg5 = tg4{tgConfig = addEnum (ebr <> ".CLKAMUX") (strParam ci "CLKAMUX" "CLKA") (addEnum (ebr <> ".CLKBMUX") (strParam ci "CLKBMUX" "CLKB") (addEnum (ebr <> ".RSTAMUX") (strParam ci "RSTAMUX" "RSTA") (addEnum (ebr <> ".RSTBMUX") (strParam ci "RSTBMUX" "RSTB") (tgConfig tg4))))}
+                    tg5 = tg4{tgConfig = addEnum (ebr <> ".RSTBMUX") (strParam ci "RSTBMUX" "RSTB") (addEnum (ebr <> ".RSTAMUX") (strParam ci "RSTAMUX" "RSTA") (addEnum (ebr <> ".CLKBMUX") (strParam ci "CLKBMUX" "CLKB") (addEnum (ebr <> ".CLKAMUX") (strParam ci "CLKAMUX" "CLKA") (tgConfig tg4))))}
                     tg6 =
                         if not isPdp
-                            then tg5{tgConfig = addEnum (ebr <> ".WEAMUX") (strParam ci "WEAMUX" "WEA") (addEnum (ebr <> ".WEBMUX") (strParam ci "WEBMUX" "WEB") (tgConfig tg5))}
+                            then tg5{tgConfig = addEnum (ebr <> ".WEBMUX") (strParam ci "WEBMUX" "WEB") (addEnum (ebr <> ".WEAMUX") (strParam ci "WEAMUX" "WEA") (tgConfig tg5))}
                             else tg5
-                    tg7 = tg6{tgConfig = addEnum (ebr <> ".CEAMUX") (strParam ci "CEAMUX" "CEA") (addEnum (ebr <> ".CEBMUX") (strParam ci "CEBMUX" "CEB") (addEnum (ebr <> ".OCEAMUX") (strParam ci "OCEAMUX" "OCEA") (addEnum (ebr <> ".OCEBMUX") (strParam ci "OCEBMUX" "OCEB") (tgConfig tg6))))}
-                    tg8 = tg7{tgConfig = addWord (ebr <> ".CSDECODE_A") (reverse csdA) (addWord (ebr <> ".CSDECODE_B") (reverse csdB) (tgConfig tg7))}
+                    tg7 = tg6{tgConfig = addEnum (ebr <> ".OCEBMUX") (strParam ci "OCEBMUX" "OCEB") (addEnum (ebr <> ".OCEAMUX") (strParam ci "OCEAMUX" "OCEA") (addEnum (ebr <> ".CEBMUX") (strParam ci "CEBMUX" "CEB") (addEnum (ebr <> ".CEAMUX") (strParam ci "CEAMUX" "CEA") (tgConfig tg6))))}
+                    tg8 = tg7{tgConfig = addWord (ebr <> ".CSDECODE_B") (reverse csdB) (addWord (ebr <> ".CSDECODE_A") (reverse csdA) (tgConfig tg7))}
                     initData = V.fromList [0 :: Int | _ <- [0 .. 2047]]
                     initData' = foldl addInit initData [0 .. 0x3F]
                     addInit acc i =
@@ -873,14 +878,14 @@ buildConfig e ai design settings =
                 then case z of
                     0 -> t0
                     1 -> [ttl e by (bx - 1 + o) m | (m, o) <- mibs]
-                    4 -> [ttl e by (bx + o) m | (m, o) <- [("MIB_DSP4", 0), ("MIB2_DSP4", 0), ("MIB_DSP5", 1), ("MIB2_DSP5", 1), ("MIB_DSP6", 2), ("MIB2_DSP6", 2), ("MIB_DSP7", 3), ("MIB2_DSP7", 3), ("MIB_DSP8", 4), ("MIB2_DSP8", 4)]] ++ [ttls e by (bx + 4) dsp8]
-                    5 -> [ttl e by (bx - 1 + o) m | (m, o) <- [("MIB_DSP4", 0), ("MIB2_DSP4", 0), ("MIB_DSP5", 1), ("MIB2_DSP5", 1), ("MIB_DSP6", 2), ("MIB2_DSP6", 2), ("MIB_DSP7", 3), ("MIB2_DSP7", 3), ("MIB_DSP8", 4), ("MIB2_DSP8", 4)]] ++ [ttls e by (bx + 3) dsp8]
+                    4 -> [ttl e by (bx + o) m | (m, o) <- [("MIB_DSP4", 0), ("MIB2_DSP4", 0), ("MIB_DSP5", 1), ("MIB2_DSP5", 1), ("MIB_DSP6", 2), ("MIB2_DSP6", 2), ("MIB_DSP7", 3), ("MIB2_DSP7", 3)]] ++ [ttls e by (bx + 4) dsp8, ttl e by (bx + 4) "MIB2_DSP8"]
+                    5 -> [ttl e by (bx - 1 + o) m | (m, o) <- [("MIB_DSP4", 0), ("MIB2_DSP4", 0), ("MIB_DSP5", 1), ("MIB2_DSP5", 1), ("MIB_DSP6", 2), ("MIB2_DSP6", 2), ("MIB_DSP7", 3), ("MIB2_DSP7", 3)]] ++ [ttls e by (bx + 3) dsp8, ttl e by (bx + 3) "MIB2_DSP8"]
                     _ -> []
                 else
                     if belTypeOf bel == "ALU54B"
                         then case z of
                             3 -> [ttl e by (bx - 3 + o) m | (m, o) <- mibs]
-                            7 -> [ttl e by (bx - 3 + o) m | (m, o) <- [("MIB_DSP4", 0), ("MIB2_DSP4", 0), ("MIB_DSP5", 1), ("MIB2_DSP5", 1), ("MIB_DSP6", 2), ("MIB2_DSP6", 2), ("MIB_DSP7", 3), ("MIB2_DSP7", 3), ("MIB_DSP8", 4), ("MIB2_DSP8", 4)]] ++ [ttls e by (bx + 1) dsp8]
+                            7 -> [ttl e by (bx - 3 + o) m | (m, o) <- [("MIB_DSP4", 0), ("MIB2_DSP4", 0), ("MIB_DSP5", 1), ("MIB2_DSP5", 1), ("MIB_DSP6", 2), ("MIB2_DSP6", 2), ("MIB_DSP7", 3), ("MIB2_DSP7", 3)]] ++ [ttls e by (bx + 1) dsp8, ttl e by (bx + 1) "MIB2_DSP8"]
                             _ -> []
                         else []
       where
@@ -888,7 +893,7 @@ buildConfig e ai design settings =
 
     tieoffDspPorts :: CellInfo BelId WireId PipId -> Bitgen -> Bitgen
     tieoffDspPorts ci b =
-        foldl tiePort b (M.toList (cellPorts ci))
+        foldl tiePort b (portOrderRefs ci)
       where
         skip p = any (`T.isPrefixOf` p) ["CLK", "CE", "RST", "SRO", "SRI", "RO", "MA", "MB", "CFB", "CIN", "SOURCE", "SIGNED", "OP"]
         tiePort bAcc (p, pi) =
@@ -1027,7 +1032,8 @@ buildConfig e ai design settings =
             Just bel ->
                 let tg0 = TileGroup (getPllTiles bel) emptyTileConfig
                     c = tgConfig tg0
-                    c1 = addWord "CLKI_DIV" (intToBits (intParam ci "CLKI_DIV" 1 - 1) 7) c
+                    c0 = addEnum "MODE" "EHXPLLL" c
+                    c1 = addWord "CLKI_DIV" (intToBits (intParam ci "CLKI_DIV" 1 - 1) 7) c0
                     c2 = addWord "CLKFB_DIV" (intToBits (intParam ci "CLKFB_DIV" 1 - 1) 7) c1
                     c3 = addEnum "CLKOP_ENABLE" (strParam ci "CLKOP_ENABLE" "ENABLED") c2
                     c4 = addEnum "CLKOS_ENABLE" (strParam ci "CLKOS_ENABLE" "ENABLED") c3
@@ -1123,7 +1129,7 @@ buildConfig e ai design settings =
                     c = tgConfig tg0
                     c' = foldl (\acc (name, width) -> addWord name (parseConfigStr (fromMaybe (PropNum "" 0) (M.lookup (cid (T.drop 4 name)) (cellParams ci))) width) acc) c dcuWords
                     b1 = addTileGroup b tg0{tgConfig = c'}
-                    b2 = foldl tiePort b1 (M.toList (cellPorts ci))
+                    b2 = foldl tiePort b1 (portOrderRefs ci)
                     tiePort bAcc (p, pi) =
                         let pname = idToText (ecp5IdTable e) p
                          in if portNet pi == Nothing && portType pi == PortIn
@@ -1294,7 +1300,7 @@ buildConfig e ai design settings =
     -- init_io_banks
     -- ------------------------------------------------------------------
     initIoBanks b =
-        let b1 = foldl scanCell b (M.elems (designCells design))
+        let b1 = foldl scanCell b (cellsIter design)
             scanCell bAcc ci =
                 case (cellType ci == cid "TRELLIS_IO", cellBel ci) of
                     (True, Just bel) ->

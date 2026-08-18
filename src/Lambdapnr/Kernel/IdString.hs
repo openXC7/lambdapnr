@@ -21,6 +21,7 @@ module Lambdapnr.Kernel.IdString (
     internStr,
     idToText,
     idToStr,
+    idByName,
     idFromIndex,
     emptyId,
     tableSlice,
@@ -86,6 +87,15 @@ idToText (IdTable ref) (IdString i) =
 -- | 'idToText' over 'String'.
 idToStr :: IdTable -> IdString -> String
 idToStr tbl = T.unpack . idToText tbl
+
+{- | Pure name lookup (the C++ @Context::id@ for names interned earlier).
+Reads the current table snapshot; sound because the table is append-only
+and names reach bitgen only after having been interned by the frontend.
+-}
+idByName :: IdTable -> Text -> Maybe IdString
+idByName (IdTable ref) t = unsafePerformIO $ do
+    (m, _) <- readIORef ref
+    pure (IdString <$> M.lookup t m)
 
 {- | Build an id from a raw index (used by chipdb loaders and arch code
 that stores pre-interned indices).

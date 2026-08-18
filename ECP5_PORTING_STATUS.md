@@ -106,6 +106,7 @@ rioctrl reference design, pass by pass.
 | 13 | Placer: HeAP main loop (spread/legalise) at bit-exact parity through 20 iterations | 4512822 |
 | 14 | Placer: placer1 SA refine — IT1-23 bit-exact, SA breaks at iter 23 exactly like C++; **post-place checksum at parity** (0xf1975059) after porting `fixupHierarchy` interning + `archInfoToAttributes` | 7ef8b5c |
 | 15 | **Router: `route_ecp5_globals` + router1 A* ripup-retry at bit-exact parity** — post-route checksums match on both lineages (0x94a9ffe1 / 0x728f80cc), 32675-arc pop trace identical, per-net wire dumps 0-diff | fd3a5f5 |
+| 16 | **Bitgen textcfg byte-identical to the oracle on both lineages** — permute_lut/CCU2 fix, JTAGG tile lookup, bram INITVAL/init data, PLL dynamic params, EBR/DSP tile groups, FF LSR/CLK null-net case, base-config entry order | — |
 
 Working tree is dirty: Placer1.hs (**new** — full placer1 SA refine port), PlacerHeap.hs
 (isBelLocValidE/dspLocationValid exports + restore unbind fix), Main.hs (place1Refine +
@@ -126,7 +127,15 @@ Chipdb.hs (`location_glbinfo`/`GlobalInfo` parsing), Binding.hs (`bsLutperm` +
 (`isPipBlockedE` lutperm check in `checkPipAvail`, `combCtxOf`), Pack.hs
 (`pkGsrclkWire` export), Main.hs (route() flow + post-place `archInfoToAttributes`
 re-run + LP_ROUTE_CK/LP_ROUTE_RESUME hooks), Placer1/PlacerHeap (bind sites go
-through `bindBelLut`).
+through `bindBelLut`). The bitgen workstream (milestone 16) touches Bitgen.hs
+(cellsIter/portOrderRefs iteration order; cibRe full-match; JCLK/JLSR outValue
+False; slice letter `z div 2`; permute_lut C++ indexing `phys_to_log[from_pin]`;
+writeFf LSR/CLK null-net case; writeBram/writeMult18/writeAlu54/writePll entry
+order + getDspTiles/getPllTiles tile lists; parseInitStr full-width as_bits;
+`cid` falls back to the runtime id table), Config.hs (blank line after
+.bram_init blocks), BaseConfigs.hs (base-config entries now added in C++ call
+order — `foldr`→`foldl (flip addEntry)`), Arch/Ecp5.hs (getTileByType matches on
+tile TYPE not tile name), Kernel/IdString.hs (pure `idByName`).
 
 ## Packer checksum status (rioctrl full design, 12k)
 
@@ -432,15 +441,29 @@ moves.
    `lutperm_allowed` map written by placer `bindBel` calls). Post-route checksums
    match on both lineages; the 32675-pop arc trace and the per-net wire/pip dumps
    are 0-diff against the oracle.
-3. **Bitgen `.config` comparison** — with placement/routing at parity, the
-   textcfg now differs only in the bitgen's enum/word ORDER (the CIB.JxMUX
-   enum insertion order etc. — the Haskell `Bitgen.hs` config accumulation
-   order must match `bitstream.cc`'s); sets of entries already agree.
+3. ~~**Bitgen `.config` comparison**~~ **RESOLVED (milestone 16)**: the textcfg
+   is now **byte-identical** to the oracle on both lineages, and the lineage B
+   output is byte-identical to `reference/rioctrl_controller.textcfg`. Root
+   causes fixed, in rough impact order: `permute_lut` was transposed relative
+   to `bitstream.cc` (`phys_to_log[from_pin].push_back(i)`, not
+   `phys_to_log[i] = from_pin`) — this single bug produced the LUT INIT words
+   and the CCU2 A1MUX/B1MUX swaps; `parse_init_str` only saw the low 64 bits
+   of 320-bit INITVAL bitvectors (as_int64 instead of as_bits); `cid` looked
+   up only the static constid table, missing dynamically-interned names
+   (INITVAL_xx, CLKOP_CPHASE) → new pure `idByName`; `getTileByType` matched
+   tile NAMES instead of tile TYPEs (lost the JTAGG ER1/ER2 enums);
+   `writeFf`'s LSR0/LSR1/CLK0/CLK1 checks required a non-null port net, but
+   the C++ emits on null==null too; `writeBram`/`writePll` nested addEnum
+   compositions ran in reverse of the C++ call order; `getDspTiles` had a
+   bogus MIB_DSP8/MIB2_DSP8 pair in the comprehension; base configs were
+   added with `foldr` (reverse of the C++ add_unknown order); the `.bram_init`
+   renderer was missing the trailing blank line.
 4. Remove debug scaffolding: CANADD/SC/CHAINS/SPLIT traces, `LP_DUMP_FFS_ORDER`
    + `LP_DUMP_ORDER` order dumps, packFfs dump, `deepseq` hacks, TBL dump
    (`lambdapnrDebugDump`), and the placer dumps (_dbgCut/_dbgPiv/_dbgBc/
    _dbgAU/_dbgCols/_dbgBin, sorted20, spread-dump write, `LPDBG main done`);
-   keep LPCHK/LPDBG until the final gate.
+   keep LPCHK/LPDBG until the final gate. (The bitgen LPCHK_* traces added
+   during the milestone-16 hunt have been removed again from Bitgen.hs.)
 5. Update REFERENCE.md's golden pack checksum (0xc76929e2 is the old binary's
    value; the current 0.10-tag oracle reproduces the reference textcfg
    byte-for-byte with post-pack 0x889a4909).

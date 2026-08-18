@@ -545,7 +545,7 @@ getTileByTypeLoc e row col typ = getTileByTypeLocSet e row col [typ]
 getTileByType :: Ecp5 -> Text -> Maybe Text
 getTileByType e typ =
     let cd = e5Chipdb e
-     in case V.findIndex (\tile -> typ `elem` map tnName (V.toList (tiTileNames tile))) (cdTileInfos cd) of
+     in case V.findIndex (\tile -> any (\tn -> cdTiletypeNames cd V.! fromIntegral (tnTypeIdx tn) == typ) (V.toList (tiTileNames tile))) (cdTileInfos cd) of
             Nothing -> Nothing
             Just i -> tnName <$> V.find (\tn -> cdTiletypeNames cd V.! fromIntegral (tnTypeIdx tn) == typ) (tiTileNames (cdTileInfos cd V.! i))
 

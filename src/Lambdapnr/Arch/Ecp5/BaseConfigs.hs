@@ -34,10 +34,10 @@ configEmpty name = case name of
 base_lfe5u_25f :: Map Text TileConfig
 base_lfe5u_25f = M.fromList
     [
-        ("CIB_R49C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R49C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R49C42:VCIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R49C42:VCIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -54,7 +54,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C43:VCIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R49C43:VCIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -71,7 +71,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C44:VCIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R49C44:VCIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -88,7 +88,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C45:VCIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R49C45:VCIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -105,7 +105,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C46:VCIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R49C46:VCIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
@@ -121,7 +121,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C47:VCIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R49C47:VCIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -138,7 +138,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C48:VCIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R49C48:VCIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
                 E "CIB.JB1MUX" "0",
@@ -152,7 +152,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C49:VCIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R49C49:VCIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -161,7 +161,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C50:VCIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R49C50:VCIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -170,7 +170,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C51:VCIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R49C51:VCIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -179,7 +179,7 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C52:VCIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R49C52:VCIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -188,20 +188,20 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C53:VCIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R49C53:VCIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
                 E "CIB.JD0MUX" "0",
                 E "CIB.JD2MUX" "0"]),
-        ("CIB_R49C69:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R49C69:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R49C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R49C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R49C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -216,21 +216,21 @@ base_lfe5u_25f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("MIB_R13C31:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R13C31:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R13C32:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R13C32:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R13C3:DSP_SPINE_UL1", foldr addEntry emptyTileConfig
+        ("MIB_R13C3:DSP_SPINE_UL1", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("MIB_R37C31:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R37C31:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R37C32:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R37C32:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R50C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R50C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
@@ -245,22 +245,22 @@ base_lfe5u_25f = M.fromList
 base_lfe5u_45f :: Map Text TileConfig
 base_lfe5u_45f = M.fromList
     [
-        ("CIB_R10C3:PVT_COUNT2", foldr addEntry emptyTileConfig
+        ("CIB_R10C3:PVT_COUNT2", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("CIB_R5C1:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C1:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R5C89:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C89:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R70C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R70C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R70C42:VCIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R70C42:VCIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -277,7 +277,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C43:VCIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R70C43:VCIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -294,7 +294,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C44:VCIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R70C44:VCIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -311,7 +311,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C45:VCIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R70C45:VCIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -328,7 +328,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C46:VCIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R70C46:VCIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
@@ -344,7 +344,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C47:VCIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R70C47:VCIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -361,7 +361,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C48:VCIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R70C48:VCIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
                 E "CIB.JB1MUX" "0",
@@ -375,7 +375,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C49:VCIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R70C49:VCIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -384,7 +384,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C50:VCIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R70C50:VCIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -393,7 +393,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C51:VCIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R70C51:VCIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -402,7 +402,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C52:VCIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R70C52:VCIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -411,13 +411,13 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C53:VCIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R70C53:VCIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
                 E "CIB.JD0MUX" "0",
                 E "CIB.JD2MUX" "0"]),
-        ("CIB_R70C69:VCIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R70C69:VCIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -434,11 +434,11 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R70C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C70:VCIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R70C70:VCIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -455,7 +455,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C71:VCIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R70C71:VCIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -472,7 +472,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C72:VCIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R70C72:VCIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -489,7 +489,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C73:VCIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R70C73:VCIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
@@ -505,7 +505,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C74:VCIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R70C74:VCIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -522,7 +522,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C75:VCIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R70C75:VCIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
                 E "CIB.JB1MUX" "0",
@@ -536,7 +536,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C76:VCIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R70C76:VCIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -545,7 +545,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C77:VCIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R70C77:VCIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -554,7 +554,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C78:VCIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R70C78:VCIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -563,7 +563,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C79:VCIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R70C79:VCIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -572,7 +572,7 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R70C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -587,24 +587,24 @@ base_lfe5u_45f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("CIB_R70C80:VCIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R70C80:VCIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
                 E "CIB.JD0MUX" "0",
                 E "CIB.JD2MUX" "0"]),
-        ("CIB_R70C87:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R70C87:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("MIB_R10C40:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R10C40:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R10C41:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R10C41:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R58C40:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R58C40:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R58C41:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R58C41:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R71C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R71C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
@@ -619,25 +619,25 @@ base_lfe5u_45f = M.fromList
 base_lfe5u_85f :: Map Text TileConfig
 base_lfe5u_85f = M.fromList
     [
-        ("CIB_R10C3:PVT_COUNT2", foldr addEntry emptyTileConfig
+        ("CIB_R10C3:PVT_COUNT2", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("CIB_R5C125:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C125:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R5C1:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C1:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C123:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R94C123:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R94C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C46:VCIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R94C46:VCIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -654,7 +654,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C47:VCIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R94C47:VCIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -671,7 +671,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C48:VCIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R94C48:VCIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -688,7 +688,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C49:VCIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R94C49:VCIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -705,7 +705,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C50:VCIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R94C50:VCIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
@@ -721,7 +721,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C51:VCIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R94C51:VCIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -738,7 +738,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C52:VCIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R94C52:VCIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
                 E "CIB.JB1MUX" "0",
@@ -752,7 +752,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C53:VCIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R94C53:VCIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -761,7 +761,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C54:VCIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R94C54:VCIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -770,7 +770,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C55:VCIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R94C55:VCIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -779,7 +779,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C56:VCIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R94C56:VCIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -788,17 +788,17 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C57:VCIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R94C57:VCIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
                 E "CIB.JD0MUX" "0",
                 E "CIB.JD2MUX" "0"]),
-        ("CIB_R94C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R94C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C71:VCIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R94C71:VCIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -815,7 +815,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C72:VCIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R94C72:VCIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -832,7 +832,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C73:VCIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R94C73:VCIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -849,7 +849,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C74:VCIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R94C74:VCIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -866,7 +866,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C75:VCIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R94C75:VCIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
@@ -882,7 +882,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C76:VCIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R94C76:VCIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA1MUX" "0",
                 E "CIB.JA3MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -899,7 +899,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C77:VCIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R94C77:VCIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA5MUX" "0",
                 E "CIB.JA7MUX" "0",
                 E "CIB.JB1MUX" "0",
@@ -913,7 +913,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C78:VCIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R94C78:VCIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -922,7 +922,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C79:VCIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R94C79:VCIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -931,7 +931,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R94C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -946,7 +946,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("CIB_R94C80:VCIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R94C80:VCIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -955,7 +955,7 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C81:VCIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R94C81:VCIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
@@ -964,72 +964,72 @@ base_lfe5u_85f = M.fromList
                 E "CIB.JD2MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C82:VCIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R94C82:VCIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB1MUX" "0",
                 E "CIB.JB3MUX" "0",
                 E "CIB.JB5MUX" "0",
                 E "CIB.JD0MUX" "0",
                 E "CIB.JD2MUX" "0"]),
-        ("MIB_R22C67:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R22C67:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R22C68:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R22C68:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R70C67:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R70C67:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R70C68:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R70C68:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R95C101:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C101:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C102:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C102:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C103:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C103:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C104:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C104:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C105:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C105:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C106:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C106:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C107:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C107:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C108:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C108:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C110:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C110:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C111:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C111:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C112:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C112:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C113:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C113:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C114:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C114:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C115:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C115:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C116:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C116:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C117:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C117:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C119:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C119:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C120:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C120:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C121:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C121:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C122:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C122:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
                 U 94 1]),
-        ("MIB_R95C96:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C96:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C97:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C97:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C98:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C98:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C99:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C99:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1])
     ]
     where
@@ -1041,10 +1041,10 @@ base_lfe5u_85f = M.fromList
 base_lfe5um_25f :: Map Text TileConfig
 base_lfe5um_25f = M.fromList
     [
-        ("CIB_R49C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R49C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R49C42:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R49C42:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1061,7 +1061,7 @@ base_lfe5um_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C43:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R49C43:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1078,7 +1078,7 @@ base_lfe5um_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C44:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R49C44:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1095,7 +1095,7 @@ base_lfe5um_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C45:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R49C45:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1112,7 +1112,7 @@ base_lfe5um_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C46:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R49C46:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1128,7 +1128,7 @@ base_lfe5um_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C47:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R49C47:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1145,7 +1145,7 @@ base_lfe5um_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C48:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R49C48:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -1159,7 +1159,7 @@ base_lfe5um_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C49:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R49C49:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1168,7 +1168,7 @@ base_lfe5um_25f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R49C50:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R49C50:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1177,7 +1177,7 @@ base_lfe5um_25f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R49C51:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R49C51:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1186,7 +1186,7 @@ base_lfe5um_25f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R49C52:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R49C52:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1195,20 +1195,20 @@ base_lfe5um_25f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R49C53:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R49C53:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("CIB_R49C69:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R49C69:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R49C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R49C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R49C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -1223,21 +1223,21 @@ base_lfe5um_25f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("MIB_R13C31:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R13C31:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R13C32:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R13C32:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R13C3:DSP_SPINE_UL1", foldr addEntry emptyTileConfig
+        ("MIB_R13C3:DSP_SPINE_UL1", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("MIB_R37C31:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R37C31:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R37C32:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R37C32:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R50C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R50C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
@@ -1252,22 +1252,22 @@ base_lfe5um_25f = M.fromList
 base_lfe5um_45f :: Map Text TileConfig
 base_lfe5um_45f = M.fromList
     [
-        ("CIB_R10C3:PVT_COUNT2", foldr addEntry emptyTileConfig
+        ("CIB_R10C3:PVT_COUNT2", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("CIB_R5C1:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C1:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R5C89:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C89:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R70C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R70C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R70C42:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R70C42:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1284,7 +1284,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C43:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R70C43:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1301,7 +1301,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C44:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R70C44:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1318,7 +1318,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C45:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R70C45:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1335,7 +1335,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C46:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R70C46:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1351,7 +1351,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C47:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R70C47:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1368,7 +1368,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C48:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R70C48:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -1382,7 +1382,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C49:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R70C49:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1391,7 +1391,7 @@ base_lfe5um_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C50:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R70C50:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1400,7 +1400,7 @@ base_lfe5um_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C51:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R70C51:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1409,7 +1409,7 @@ base_lfe5um_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C52:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R70C52:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1418,13 +1418,13 @@ base_lfe5um_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C53:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R70C53:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("CIB_R70C69:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R70C69:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1441,11 +1441,11 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R70C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C70:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R70C70:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1462,7 +1462,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C71:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R70C71:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1479,7 +1479,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C72:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R70C72:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1496,7 +1496,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C73:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R70C73:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1512,7 +1512,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C74:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R70C74:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1529,7 +1529,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C75:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R70C75:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -1543,7 +1543,7 @@ base_lfe5um_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C76:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R70C76:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1552,7 +1552,7 @@ base_lfe5um_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C77:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R70C77:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1561,7 +1561,7 @@ base_lfe5um_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C78:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R70C78:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1570,7 +1570,7 @@ base_lfe5um_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C79:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R70C79:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1579,7 +1579,7 @@ base_lfe5um_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R70C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -1594,24 +1594,24 @@ base_lfe5um_45f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("CIB_R70C80:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R70C80:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("CIB_R70C87:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R70C87:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("MIB_R10C40:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R10C40:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R10C41:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R10C41:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R58C40:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R58C40:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R58C41:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R58C41:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R71C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R71C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
@@ -1626,10 +1626,10 @@ base_lfe5um_45f = M.fromList
 base_lfe5um5g_25f :: Map Text TileConfig
 base_lfe5um5g_25f = M.fromList
     [
-        ("CIB_R49C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R49C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R49C42:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R49C42:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1646,7 +1646,7 @@ base_lfe5um5g_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C43:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R49C43:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1663,7 +1663,7 @@ base_lfe5um5g_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C44:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R49C44:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1680,7 +1680,7 @@ base_lfe5um5g_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C45:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R49C45:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1697,7 +1697,7 @@ base_lfe5um5g_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C46:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R49C46:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1713,7 +1713,7 @@ base_lfe5um5g_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C47:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R49C47:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1730,7 +1730,7 @@ base_lfe5um5g_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C48:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R49C48:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -1744,7 +1744,7 @@ base_lfe5um5g_25f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R49C49:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R49C49:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1753,7 +1753,7 @@ base_lfe5um5g_25f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R49C50:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R49C50:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1762,7 +1762,7 @@ base_lfe5um5g_25f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R49C51:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R49C51:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1771,7 +1771,7 @@ base_lfe5um5g_25f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R49C52:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R49C52:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1780,20 +1780,20 @@ base_lfe5um5g_25f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R49C53:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R49C53:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("CIB_R49C69:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R49C69:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R49C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R49C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R49C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R49C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -1808,21 +1808,21 @@ base_lfe5um5g_25f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("MIB_R13C31:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R13C31:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R13C32:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R13C32:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R13C3:DSP_SPINE_UL1", foldr addEntry emptyTileConfig
+        ("MIB_R13C3:DSP_SPINE_UL1", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("MIB_R37C31:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R37C31:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R37C32:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R37C32:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R50C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R50C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
@@ -1837,22 +1837,22 @@ base_lfe5um5g_25f = M.fromList
 base_lfe5um5g_45f :: Map Text TileConfig
 base_lfe5um5g_45f = M.fromList
     [
-        ("CIB_R10C3:PVT_COUNT2", foldr addEntry emptyTileConfig
+        ("CIB_R10C3:PVT_COUNT2", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("CIB_R5C1:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C1:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R5C89:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C89:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R70C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R70C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R70C42:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R70C42:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1869,7 +1869,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C43:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R70C43:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1886,7 +1886,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C44:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R70C44:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1903,7 +1903,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C45:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R70C45:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1920,7 +1920,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C46:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R70C46:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1936,7 +1936,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C47:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R70C47:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -1953,7 +1953,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C48:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R70C48:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -1967,7 +1967,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C49:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R70C49:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1976,7 +1976,7 @@ base_lfe5um5g_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C50:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R70C50:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1985,7 +1985,7 @@ base_lfe5um5g_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C51:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R70C51:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -1994,7 +1994,7 @@ base_lfe5um5g_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C52:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R70C52:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2003,13 +2003,13 @@ base_lfe5um5g_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C53:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R70C53:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("CIB_R70C69:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R70C69:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2026,11 +2026,11 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R70C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R70C70:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R70C70:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2047,7 +2047,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C71:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R70C71:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2064,7 +2064,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C72:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R70C72:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2081,7 +2081,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C73:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R70C73:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2097,7 +2097,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C74:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R70C74:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2114,7 +2114,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C75:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R70C75:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -2128,7 +2128,7 @@ base_lfe5um5g_45f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R70C76:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R70C76:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2137,7 +2137,7 @@ base_lfe5um5g_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C77:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R70C77:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2146,7 +2146,7 @@ base_lfe5um5g_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C78:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R70C78:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2155,7 +2155,7 @@ base_lfe5um5g_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C79:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R70C79:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2164,7 +2164,7 @@ base_lfe5um5g_45f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R70C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R70C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -2179,24 +2179,24 @@ base_lfe5um5g_45f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("CIB_R70C80:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R70C80:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("CIB_R70C87:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R70C87:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("MIB_R10C40:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R10C40:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R10C41:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R10C41:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R58C40:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R58C40:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R58C41:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R58C41:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R71C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R71C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
@@ -2211,25 +2211,25 @@ base_lfe5um5g_45f = M.fromList
 base_lfe5um5g_85f :: Map Text TileConfig
 base_lfe5um5g_85f = M.fromList
     [
-        ("CIB_R10C3:PVT_COUNT2", foldr addEntry emptyTileConfig
+        ("CIB_R10C3:PVT_COUNT2", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("CIB_R5C125:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C125:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R5C1:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C1:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C123:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R94C123:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R94C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C46:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R94C46:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2246,7 +2246,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C47:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R94C47:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2263,7 +2263,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C48:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R94C48:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2280,7 +2280,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C49:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R94C49:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2297,7 +2297,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C50:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R94C50:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2313,7 +2313,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C51:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R94C51:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2330,7 +2330,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C52:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R94C52:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -2344,7 +2344,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C53:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R94C53:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2353,7 +2353,7 @@ base_lfe5um5g_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C54:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R94C54:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2362,7 +2362,7 @@ base_lfe5um5g_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C55:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R94C55:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2371,7 +2371,7 @@ base_lfe5um5g_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C56:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R94C56:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2380,17 +2380,17 @@ base_lfe5um5g_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C57:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R94C57:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("CIB_R94C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R94C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C71:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R94C71:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2407,7 +2407,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C72:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R94C72:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2424,7 +2424,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C73:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R94C73:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2441,7 +2441,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C74:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R94C74:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2458,7 +2458,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C75:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R94C75:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2474,7 +2474,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C76:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R94C76:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2491,7 +2491,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C77:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R94C77:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -2505,7 +2505,7 @@ base_lfe5um5g_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C78:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R94C78:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2514,7 +2514,7 @@ base_lfe5um5g_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C79:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R94C79:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2523,7 +2523,7 @@ base_lfe5um5g_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R94C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -2538,7 +2538,7 @@ base_lfe5um5g_85f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("CIB_R94C80:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R94C80:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2547,7 +2547,7 @@ base_lfe5um5g_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C81:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R94C81:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2556,72 +2556,72 @@ base_lfe5um5g_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C82:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R94C82:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("MIB_R22C67:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R22C67:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R22C68:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R22C68:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R70C67:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R70C67:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R70C68:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R70C68:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R95C101:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C101:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C102:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C102:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C103:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C103:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C104:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C104:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C105:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C105:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C106:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C106:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C107:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C107:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C108:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C108:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C110:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C110:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C111:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C111:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C112:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C112:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C113:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C113:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C114:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C114:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C115:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C115:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C116:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C116:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C117:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C117:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C119:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C119:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C120:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C120:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C121:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C121:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C122:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C122:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
                 U 94 1]),
-        ("MIB_R95C96:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C96:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C97:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C97:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C98:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C98:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C99:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C99:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1])
     ]
     where
@@ -2633,25 +2633,25 @@ base_lfe5um5g_85f = M.fromList
 base_lfe5um_85f :: Map Text TileConfig
 base_lfe5um_85f = M.fromList
     [
-        ("CIB_R10C3:PVT_COUNT2", foldr addEntry emptyTileConfig
+        ("CIB_R10C3:PVT_COUNT2", foldl (flip addEntry) emptyTileConfig
             [U 2 0,
                 U 3 0,
                 U 5 0,
                 U 11 0,
                 U 13 0]),
-        ("CIB_R5C125:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C125:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R5C1:CIB_PLL1", foldr addEntry emptyTileConfig
+        ("CIB_R5C1:CIB_PLL1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C123:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R94C123:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C3:CIB_PLL3", foldr addEntry emptyTileConfig
+        ("CIB_R94C3:CIB_PLL3", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JB3MUX" "0"]),
-        ("CIB_R94C46:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R94C46:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2668,7 +2668,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C47:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R94C47:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2685,7 +2685,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C48:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R94C48:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2702,7 +2702,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C49:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R94C49:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2719,7 +2719,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C50:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R94C50:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2735,7 +2735,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C51:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R94C51:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2752,7 +2752,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C52:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R94C52:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -2766,7 +2766,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C53:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R94C53:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2775,7 +2775,7 @@ base_lfe5um_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C54:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R94C54:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2784,7 +2784,7 @@ base_lfe5um_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C55:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R94C55:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2793,7 +2793,7 @@ base_lfe5um_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C56:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R94C56:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2802,17 +2802,17 @@ base_lfe5um_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C57:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R94C57:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("CIB_R94C6:CIB_EFB0", foldr addEntry emptyTileConfig
+        ("CIB_R94C6:CIB_EFB0", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JB3MUX" "0",
                 E "CIB.JC6MUX" "0",
                 E "CIB.JD6MUX" "0"]),
-        ("CIB_R94C71:CIB_DCU0", foldr addEntry emptyTileConfig
+        ("CIB_R94C71:CIB_DCU0", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2829,7 +2829,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C72:CIB_DCUA", foldr addEntry emptyTileConfig
+        ("CIB_R94C72:CIB_DCUA", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2846,7 +2846,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C73:CIB_DCUB", foldr addEntry emptyTileConfig
+        ("CIB_R94C73:CIB_DCUB", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2863,7 +2863,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C74:CIB_DCUC", foldr addEntry emptyTileConfig
+        ("CIB_R94C74:CIB_DCUC", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2880,7 +2880,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C75:CIB_DCUD", foldr addEntry emptyTileConfig
+        ("CIB_R94C75:CIB_DCUD", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2896,7 +2896,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C76:CIB_DCUF", foldr addEntry emptyTileConfig
+        ("CIB_R94C76:CIB_DCUF", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 21 10,
                 U 22 10,
@@ -2913,7 +2913,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C77:CIB_DCU3", foldr addEntry emptyTileConfig
+        ("CIB_R94C77:CIB_DCU3", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 23 10,
@@ -2927,7 +2927,7 @@ base_lfe5um_85f = M.fromList
                 U 83 10,
                 U 84 10,
                 U 85 10]),
-        ("CIB_R94C78:CIB_DCU2", foldr addEntry emptyTileConfig
+        ("CIB_R94C78:CIB_DCU2", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2936,7 +2936,7 @@ base_lfe5um_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C79:CIB_DCUG", foldr addEntry emptyTileConfig
+        ("CIB_R94C79:CIB_DCUG", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2945,7 +2945,7 @@ base_lfe5um_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C7:CIB_EFB1", foldr addEntry emptyTileConfig
+        ("CIB_R94C7:CIB_EFB1", foldl (flip addEntry) emptyTileConfig
             [E "CIB.JA3MUX" "0",
                 E "CIB.JA4MUX" "0",
                 E "CIB.JA5MUX" "0",
@@ -2960,7 +2960,7 @@ base_lfe5um_85f = M.fromList
                 E "CIB.JD3MUX" "0",
                 E "CIB.JD4MUX" "0",
                 E "CIB.JD5MUX" "0"]),
-        ("CIB_R94C80:CIB_DCUH", foldr addEntry emptyTileConfig
+        ("CIB_R94C80:CIB_DCUH", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2969,7 +2969,7 @@ base_lfe5um_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C81:CIB_DCUI", foldr addEntry emptyTileConfig
+        ("CIB_R94C81:CIB_DCUI", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
@@ -2978,72 +2978,72 @@ base_lfe5um_85f = M.fromList
                 U 76 10,
                 U 83 10,
                 U 85 10]),
-        ("CIB_R94C82:CIB_DCU1", foldr addEntry emptyTileConfig
+        ("CIB_R94C82:CIB_DCU1", foldl (flip addEntry) emptyTileConfig
             [U 20 10,
                 U 22 10,
                 U 29 10,
                 U 31 10,
                 U 74 10]),
-        ("MIB_R22C67:CMUX_UL_0", foldr addEntry emptyTileConfig
+        ("MIB_R22C67:CMUX_UL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK0" "G_VPFN0000"]),
-        ("MIB_R22C68:CMUX_UR_0", foldr addEntry emptyTileConfig
+        ("MIB_R22C68:CMUX_UR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS0CLK1" "G_VPFN0000"]),
-        ("MIB_R70C67:CMUX_LL_0", foldr addEntry emptyTileConfig
+        ("MIB_R70C67:CMUX_LL_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK0" "G_VPFN0000"]),
-        ("MIB_R70C68:CMUX_LR_0", foldr addEntry emptyTileConfig
+        ("MIB_R70C68:CMUX_LR_0", foldl (flip addEntry) emptyTileConfig
             [A "G_DCS1CLK1" "G_VPFN0000"]),
-        ("MIB_R95C101:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C101:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C102:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C102:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C103:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C103:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C104:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C104:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C105:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C105:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C106:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C106:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C107:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C107:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C108:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C108:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C110:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C110:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C111:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C111:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C112:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C112:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C113:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C113:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C114:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C114:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C115:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C115:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C116:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C116:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C117:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C117:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C119:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C119:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C120:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C120:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C121:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C121:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C122:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C122:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C4:EFB0_PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C4:EFB0_PICB0", foldl (flip addEntry) emptyTileConfig
             [U 54 1,
                 U 56 1,
                 U 82 1,
                 U 94 1]),
-        ("MIB_R95C96:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C96:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C97:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C97:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C98:PICB0", foldr addEntry emptyTileConfig
+        ("MIB_R95C98:PICB0", foldl (flip addEntry) emptyTileConfig
             [U 0 1]),
-        ("MIB_R95C99:PICB1", foldr addEntry emptyTileConfig
+        ("MIB_R95C99:PICB1", foldl (flip addEntry) emptyTileConfig
             [U 0 1])
     ]
     where

@@ -163,7 +163,7 @@ renderChipConfig cc =
     renderBram (key, bytes) =
         [ ".bram_init " <> T.pack (show key) <> "\n"
             <> T.intercalate "\n" (map T.unwords (chunksOf 8 [T.pack (pad3 (showHex b)) | b <- bytes]))
-            <> "\n"
+            <> "\n\n"
         ]
     showHex b = Numeric.showHex b ""
     pad3 s = replicate (3 - length s) '0' ++ s
