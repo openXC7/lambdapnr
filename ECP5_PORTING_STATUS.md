@@ -109,35 +109,27 @@ rioctrl reference design, pass by pass.
 | 16 | **Bitgen textcfg byte-identical to the oracle on both lineages** — permute_lut/CCU2 fix, JTAGG tile lookup, bram INITVAL/init data, PLL dynamic params, EBR/DSP tile groups, FF LSR/CLK null-net case, base-config entry order | a2a74a2 |
 | 17 | **Timing report at byte parity** — post-pack device-utilisation table, post-place fmax/histogram, post-route critical paths/Fmax/max delays/slack histogram and the `Program finished normally.` tail match the oracle byte-for-byte on both lineages | 26571cd |
 | 18 | **LPF FREQUENCY constraints end-to-end** — `addClock` clkconstr (float `getDelayFromNS` roundtrip), pack `generate_constraints` derived constraints (PLL input/VCO/output math, Property binary-string values, override warnings), clkconstr follows net renames (`nxio_to_tr` `$TRELLIS_IO_IN`) and global promotion (`insert_dcc`), timing-report fmax targets + slack-histogram periods from the constraint — verified byte-identical on a new FREQUENCY lineage | 56e6385 |
+| 19 | **Output writers `--write`/`--sdf`/`--report` at byte parity** — json11 `write_json_file` design dump (sorted keys, %.17g doubles, dict-ordered attributes/params/ports), `writeSDF` back-annotation (DELAYFILE/CELL/IOPATH/SETUPHOLD), `writeJsonReport` critical-path JSON — all three files byte-identical to the oracle on both lineages, with the textcfg and all checksums unchanged | 1979794 |
 
-Working tree is dirty: Placer1.hs (**new** — full placer1 SA refine port), PlacerHeap.hs
-(isBelLocValidE/dspLocationValid exports + restore unbind fix), Main.hs (place1Refine +
-LP_PLACER1_SAVE/RESUME save/resume, LP_PLACE_SAVE/LP_PLACE_CK post-place dumps, forces
-the post-place checksum with `seq` before printf, calls `archInfoToAttributes` after the
-pack checksum print), DeterministicRng.hs (rngFromState), Pack.hs (sd0Rename uses
-`renamePort` instead of `movePort`; packFfs' "erase unconnected M" path now
-`swapRemovePort` and updates cellPortOrder; **`fixupHierarchy` now ports the
-trim/rebuild local-name interning (was a no-op)**; **new `archInfoToAttributes`
-(NEXTPNR_BEL/BEL_STRENGTH/ROUTING attrs, interned in C++ order)**), Netlist.hs
-(renameCellPort overwrites instead of appending a duplicate port to cellPortOrder,
-matching C++ `dict operator[]`; restored the `removeNetDriver` export; **new
-`setNetAttr`/`delCellAttr`**), cabal (exposes the Placer1 module),
-ECP5_PORTING_STATUS.md. The placer1 workstream is done (milestone 14). The router workstream (milestone
-15) is in the tree: **Router.hs (new — `route_ecp5_globals` + router1 engine)**,
-Chipdb.hs (`location_glbinfo`/`GlobalInfo` parsing), Binding.hs (`bsLutperm` +
-`bindBelLut` mirroring the C++ `lutperm_allowed` bindBel side effect), Arch.hs
-(`isPipBlockedE` lutperm check in `checkPipAvail`, `combCtxOf`), Pack.hs
-(`pkGsrclkWire` export), Main.hs (route() flow + post-place `archInfoToAttributes`
-re-run + LP_ROUTE_CK/LP_ROUTE_RESUME hooks), Placer1/PlacerHeap (bind sites go
-through `bindBelLut`). The bitgen workstream (milestone 16) touches Bitgen.hs
-(cellsIter/portOrderRefs iteration order; cibRe full-match; JCLK/JLSR outValue
-False; slice letter `z div 2`; permute_lut C++ indexing `phys_to_log[from_pin]`;
-writeFf LSR/CLK null-net case; writeBram/writeMult18/writeAlu54/writePll entry
-order + getDspTiles/getPllTiles tile lists; parseInitStr full-width as_bits;
-`cid` falls back to the runtime id table), Config.hs (blank line after
-.bram_init blocks), BaseConfigs.hs (base-config entries now added in C++ call
-order — `foldr`→`foldl (flip addEntry)`), Arch/Ecp5.hs (getTileByType matches on
-tile TYPE not tile name), Kernel/IdString.hs (pure `idByName`).
+Working tree is clean: milestone 19 (the output writers) is committed. The
+writers workstream added Kernel/CFormat.hs (C %g/%.17g via exact dyadic decimal
+expansion — glibc-verified, round-half-even, `e+XX` exponents), Kernel/JsonWrite.hs
+(json11-serialized write.json: `creator`/`modules`/`ports`/`cells`/`netnames`,
+std::map-sorted keys, %.17g doubles, ints %d, dummy bit indices from a shared
+idTableSize+1000 counter), Kernel/Sdf.hs (DELAYFILE/CELL/IOPATH/TIMINGCHECK
+SETUPHOLD, %.6g delays), Kernel/Introsort.hs (exact port of the GCC 16 libstdc++
+std::sort introsort: __lg*2 depth limit, median-of-three Hoare partition,
+__make_heap/__adjust_heap/__push_heap/__pop_heap/__sort_heap fallback, _S_threshold
+16 insertion-sort tail), TimingReport.hs (writeJsonReport: critical_paths/fmax/
+utilisation), and order-tracking through the setters (cellParamOrder/cellAttrOrder,
+netAttrOrder/netWireOrder, designPortDirs/designPortOrder, ctxSettingsOrder/
+ctxAttrs/ctxAttrOrder). Router.hs routes the global-spine toroute list through
+stdSortBy (the C++ std::sort permutation decides the per-user bind order of the
+ROUTING strings) with the list built in emplace_back order, and rsArcToWires is an
+ordered pool (insertion order, swap-erase, reverse iteration). Pack.hs markGlobalNet/
+markGlobal set ECP5_IS_GLOBAL through setNetAttr so the attribute shows up in the
+write.json netnames. Main.hs wires write -> sdf -> report after customBitstream and
+replays the C++ settings insertion order (insSett).
 
 ## Packer checksum status (rioctrl full design, 12k)
 
@@ -512,3 +504,46 @@ moves.
       `$glbnet$...` net.
     - The fmax target override is float division `1000/getDelayNS(period)`;
       the histogram `clk_period` is a FLOAT holding the constrained period.
+7. ~~**Output writers (`--write`/`--sdf`/`--report`)**~~ **RESOLVED (milestone 19)**:
+   the three files are **byte-identical** to the oracle on both lineages (and the
+   textcfg stays byte-identical; checksums unchanged: A 0xa0768a93/0xf1975059/
+   0x94a9ffe1, B 0x889a4909/0x519b603f/0x728f80cc). The writers run after
+   `customBitstream` in the order write -> sdf -> report. Trap list:
+   - **The C++ `std::sort` is libstdc++ introsort and UNSTABLE** — the
+     `route_globals` toroute sort by `global_route_priority` (90/99) reorders
+     equal-priority users in a permutation that decides the per-user bind
+     order of the global-spine ROUTING strings. Ported the exact algorithm
+     (`Kernel/Introsort.hs`: `__lg(n)*2` depth limit, `__move_median_to_first`
+     median-of-three, Hoare `__unguarded_partition`, `__heap_select`/
+     `__partial_sort` heapsort fallback with `__adjust_heap`/`__push_heap`/
+     `__pop_heap`/`__sort_heap`, `_S_threshold = 16` final insertion sort;
+     validated against real GCC on 450 fuzz cases incl. size 1977). The
+     pre-sort list must ALSO match: the C++ `emplace_back`s users per clock
+     net, so the Haskell list is built with append, not prepend (both net
+     blocks and within-net user order verified against a pre-sort dump).
+   - **json11 objects are `std::map` → keys SORTED**; nextpnr `dict`/`pool`
+     containers iterate REVERSE-insertion — so every attribute/param/port/
+     wire/setting setter must maintain an insertion-order list and the
+     writers must emit it reversed. The arc-wire `pool` in the ripup path is
+     the same shape (`poolInsert` + `swapRemovePort` + reverse iteration).
+   - **Doubles**: json11 emits `%.17g` and SDF delays are `%.6g`; GHC's
+     `printf` does not round half-to-even the way glibc does, so
+     `Kernel/CFormat.hs` computes the digits from the exact dyadic expansion
+     (`decodeFloat`) with round-half-even and `e+XX` exponents.
+   - **`markGlobalNet`/`markGlobal` (pack) wrote `ECP5_IS_GLOBAL` with a bare
+     `M.insert`** — present in the map but invisible to the
+     `netAttrOrder`-driven writer; both now go through `setNetAttr`. The
+     C++ side sets the attr in `insert_dcc` (`glbptr->attrs[...] = 1`).
+   - **Settings must be inserted in the C++ flow order** (frontend synth/
+     input/lpf, pack tail, placer1/placerHeap config reads, Arch::place/
+     route, router1 constructor) with C++-exact values (`target_freq` =
+     `"12000000.000000"`, 32-bit numeric `timing_driven`/`slack_redist_iter`/
+     `auto_freq` — C++ `Property(true)` converts bool to `Property(int64_t)`,
+     NOT to a string; `arch.name` is the literal `"ARCHNAME"` placeholder).
+   - The report's segment keys go delay/from/net/sources/to/type (json11
+     map order), and dummy port-bit indices share one
+     `idTableSize + 1000` counter (`[  ]` for a single `-1`).
+   - `loadJsonDesign` now returns the module attributes separately, and the
+     test suite was updated for the new constructor fields (NetInfo/CellInfo
+     order lists, numeric `timing_driven`, `arch.name` = `"ARCHNAME"`);
+     `cabal test` passes 85/85.
