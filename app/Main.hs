@@ -26,14 +26,15 @@ import Lambdapnr.Arch.Ecp5.ArchCellInfo (assignArchInfo)
 import Lambdapnr.Arch.Ecp5.Binding (BindState (..), bindBel, emptyBindState)
 import Lambdapnr.Arch.Ecp5.Bitgen (buildConfig)
 import Lambdapnr.Arch.Ecp5.Config (renderChipConfig)
-import Lambdapnr.Arch.Ecp5.Pack (Packer, archInfoToAttributes, designOf, packDesign, pkGsrclkWire)
+import Lambdapnr.Arch.Ecp5.Pack (archInfoToAttributes, designOf, packDesign, pkGsrclkWire)
 import Lambdapnr.Arch.Ecp5.PlacerHeap (CellLoc (..), PlacerState (..), emptyPlacerState, placeHeapInitialIters, placeHeapMain, placeHeapSeed)
 import Lambdapnr.Arch.Ecp5.Placer1 (place1Refine)
 import Lambdapnr.Arch.Ecp5.Router (renderWireDump, routeEcp5Globals, routeRouter1, setupWireLocations)
-import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..))
+import Lambdapnr.Arch.Ecp5.CellTiming (TimingDb (..), getCellDelayAi, getPortClockingInfoAi, getPortTimingClassAi)
 import Lambdapnr.Arch.Ecp5.Types (BelId (..), Location (..), PipId (..), WireId (..), eaDevice)
 import Lambdapnr.CLI (Command (..), applyGeneralOpts, checkSingleDevice, ecp5ArgsFromOpts, ecp5Options, generalOptions, parseArgs, renderHelp, versionLine)
-import Data.List (foldl', intercalate)
+import Data.List (intercalate)
+import Data.Maybe (fromMaybe, isJust)
 import Lambdapnr.Kernel.Arch (getBelName, getChipName)
 import Lambdapnr.Kernel.Checksum (checksum, checksumCell, checksumNet)
 import Lambdapnr.Kernel.ArchCheck (archcheck)
@@ -41,7 +42,8 @@ import Lambdapnr.Kernel.Context (Context (..), newContextWith)
 import Lambdapnr.Kernel.JsonFrontend (loadJsonDesign)
 import Lambdapnr.Kernel.Netlist (CellInfo (..), Design, NetInfo (..), PipMap (..), PlaceStrength, PortInfo (..), PortRef (..), cellAttrs, cellBel, cellBelStrength, cellName, cellParams, cellPorts, cellType, cellsIter, designCellOrder, designCells, designNetOrder, designNets, netAttrs, netDriver, netName, netUsers, netsIter, portNet, portType, prCell, prPort)
 import Lambdapnr.Kernel.DeterministicRng (Rng, rngFromState, rngState)
-import Lambdapnr.Kernel.Property (Property (..), propAsString)
+import Lambdapnr.Kernel.Property (Property (..), propAsInt64, propAsString, propIsString)
+import Lambdapnr.Kernel.TimingReport (logTimingResults, printUtilisation, timingAnalysisReport)
 import qualified Data.Vector as V
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
@@ -56,6 +58,13 @@ lambdapnrDebugDump :: IdTable -> IO ()
 lambdapnrDebugDump tbl = do
     xs <- tableSlice tbl 1969 46000
     mapM_ (hPutStrLn stderr . ("TBL " ++)) (zipWith (\i s -> show i ++ ": " ++ s) [1969 ..] xs)
+
+-- | @setting<float>@: read a numeric setting (@Property::as_double@).
+settingDouble :: M.Map IdString Property -> IdString -> Double -> Double
+settingDouble settings' key def =
+    case M.lookup key settings' of
+        Nothing -> def
+        Just p -> if propIsString p then read (T.unpack (propAsString p)) else fromIntegral (propAsInt64 p)
 
 -- | The serialized property string (C++ @Property::str@).
 propStrD :: Property -> Text
@@ -235,6 +244,8 @@ runFlow prog opts = case checkSingleDevice opts of
                                                     -- checksum print, mirroring pack.cc:3035-3038)
                                                     dPackedAttr <- archInfoToAttributes arch dPacked
                                                     let dPacked' = dPackedAttr
+                                                    -- command.cc executeMain: print_utilisation after pack
+                                                    printUtilisation arch (ctxIdTable ctx') dPacked'
                                                     -- placer stage 1: constraints + seed + initial HPWL
                                                     hPutStrLn stderr (printf "LPDBG rngstate %016x" (rngState (ctxRng ctx')))
                                                     let cidOfT = \t -> M.lookup t (tdConstIdByName (ecp5TimingDb arch))
@@ -288,6 +299,16 @@ runFlow prog opts = case checkSingleDevice opts of
                                                                         writeFile f (unlines (cellLns ++ netLns))
                                                                     Nothing -> pure ()
                                                                 pure (arch3x, dRefinedx, rngRefinedx)
+                                                    -- SAPlacer::place() tail: timing_analysis() before the
+                                                    -- placer1 checksum print (default args: fmax + histogram,
+                                                    -- no critical paths).
+                                                    let dbP = ecp5TimingDb arch3
+                                                        aiP = assignArchInfo cidOfT dRefined
+                                                        cidPT = \x -> fromMaybe emptyId (cidOfT x)
+                                                        isGlobalP ni = isJust (M.lookup (cidPT "ECP5_IS_GLOBAL") (netAttrs ni))
+                                                        tgtP = settingDouble settings' (cidPT "target_freq") 1.2e7
+                                                        placeReport = timingAnalysisReport arch3 (ctxIdTable ctx') (getPortTimingClassAi dbP aiP) (getPortClockingInfoAi dbP aiP) (getCellDelayAi dbP aiP) isGlobalP tgtP dRefined
+                                                    logTimingResults arch3 (ctxIdTable ctx') (designCells dRefined) (designNets dRefined) False True True False placeReport
                                                     let cksum2 =
                                                             checksum
                                                                 (fromIntegral . belIdx)
@@ -323,6 +344,14 @@ runFlow prog opts = case checkSingleDevice opts of
                                                                 (fromIntegral . pipIdx)
                                                                 dRouted
                                                     let ck3 = cksum3 in ck3 `seq` hPutStrLn stderr (printf "Post-route checksum: 0x%08x" ck3)
+                                                    -- router1 tail: timing_analysis(ctx, true, true, true, true, true)
+                                                    let dbR = ecp5TimingDb arch4
+                                                        aiR = assignArchInfo cidOfT dRouted
+                                                        cidRT = \x -> fromMaybe emptyId (cidOfT x)
+                                                        isGlobalR ni = isJust (M.lookup (cidRT "ECP5_IS_GLOBAL") (netAttrs ni))
+                                                        tgtR = settingDouble settings' (cidRT "target_freq") 1.2e7
+                                                        routeReport = timingAnalysisReport arch4 (ctxIdTable ctx') (getPortTimingClassAi dbR aiR) (getPortClockingInfoAi dbR aiR) (getCellDelayAi dbR aiR) isGlobalR tgtR dRouted
+                                                    logTimingResults arch4 (ctxIdTable ctx') (designCells dRouted) (designNets dRouted) True True True True routeReport
                                                     routeCkFile <- lookupEnv "LP_ROUTE_CK"
                                                     case routeCkFile of
                                                         Just f -> do
@@ -360,8 +389,11 @@ runFlow prog opts = case checkSingleDevice opts of
                                                         Just (Just cfgFile) -> do
                                                             let cc = buildConfig arch4 ai dRouted settings'
                                                             TIO.writeFile cfgFile (renderChipConfig cc)
-                                                            hPutStrLn stderr (prog ++ ": wrote text config to " ++ cfgFile)
                                                         _ -> pure ()
+                                                    -- CommandHandler::exec() tail: printFooter (empty: 0
+                                                    -- warnings/errors) + log_break + the final line
+                                                    hPutStrLn stderr ""
+                                                    hPutStrLn stderr "Info: Program finished normally."
                                         _ -> die prog "no JSON design file specified"
 
 -- | @ECP5CommandHandler::customAfterLoad@: parse every @--lpf@ file via

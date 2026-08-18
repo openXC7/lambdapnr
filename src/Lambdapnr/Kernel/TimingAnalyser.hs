@@ -32,7 +32,10 @@ module Lambdapnr.Kernel.TimingAnalyser (
     PortDomainPairData (..),
     TimingAnalyser (..),
     buildTimingAnalyser,
+    buildTimingAnalyserRaw,
     runTimingAnalyser,
+    runTimingAnalyserBy,
+    getRouteDelaysBy,
     criticalityOf,
 ) where
 
@@ -143,14 +146,31 @@ buildTimingAnalyser ::
     Design (Bel a) (Wire a) (Pip a) ->
     TimingAnalyser
 buildTimingAnalyser arch ptc pci getDelay isGlobalNet setupOnly d =
+    runTimingAnalyserBy arch isGlobalNet True (routeDelayPredict arch (designCells d))
+        (buildTimingAnalyserRaw arch ptc pci getDelay isGlobalNet setupOnly d)
+        d
+
+-- | The @buildTimingAnalyser@ construction without the initial @run@
+-- (the C++ @setup@ minus @run@; the report flow needs to inject its own
+-- route-delay source before the first run).
+buildTimingAnalyserRaw ::
+    Arch a =>
+    a ->
+    (CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> (TimingPortClass, Int)) ->
+    (CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> Int -> TimingClockingInfo) ->
+    (CellInfo (Bel a) (Wire a) (Pip a) -> IdString -> IdString -> Maybe DelayQuad) ->
+    (NetInfo (Bel a) (Wire a) (Pip a) -> Bool) ->
+    Bool ->
+    Design (Bel a) (Wire a) (Pip a) ->
+    TimingAnalyser
+buildTimingAnalyserRaw arch ptc pci getDelay isGlobalNet setupOnly d =
     let ports0 = initPorts (designCells d)
         ports1 = getCellDelays arch ptc pci getDelay (designCells d) ports0
         (haveLoops, topo) = topoSort (designCells d) (designNets d) ports1
         domains0 = [PerDomain emptyId RisingEdge [] []]
         (ports2, domains1, pairs0) = setupPortDomains (designCells d) (designNets d) haveLoops topo ports1 domains0 M.empty
         clockDelays = identifyRelatedDomains arch ptc pci getDelay (designCells d) (designNets d) domains1
-        tmg0 = TimingAnalyser ports2 domains1 pairs0 topo clockDelays setupOnly
-     in runTimingAnalyser arch isGlobalNet True tmg0 d
+     in TimingAnalyser ports2 domains1 pairs0 topo clockDelays setupOnly
 
 -- | @run@: reset times, refresh route delays, walk both directions,
 -- compute slack and criticality.
@@ -163,9 +183,24 @@ runTimingAnalyser ::
     Design (Bel a) (Wire a) (Pip a) ->
     TimingAnalyser
 runTimingAnalyser arch isGlobalNet updateRouteDelays tmg d =
+    runTimingAnalyserBy arch isGlobalNet updateRouteDelays (routeDelayPredict arch (designCells d)) tmg d
+
+-- | @run@ with a caller-supplied per-net-per-user route delay (the C++
+-- @get_route_delays@ loops @ctx->getNetinfoRouteDelay@; the placer-era
+-- caller passes the @predictDelay@-based value instead).
+runTimingAnalyserBy ::
+    Arch a =>
+    a ->
+    (NetInfo (Bel a) (Wire a) (Pip a) -> Bool) ->
+    Bool ->
+    (NetInfo (Bel a) (Wire a) (Pip a) -> PortRef -> DelayT) ->
+    TimingAnalyser ->
+    Design (Bel a) (Wire a) (Pip a) ->
+    TimingAnalyser
+runTimingAnalyserBy arch isGlobalNet updateRouteDelays delayFn tmg d =
     let ports0 = resetTimes (taPorts tmg)
         ports1
-            | updateRouteDelays = getRouteDelays arch isGlobalNet (designCells d) (designNets d) ports0
+            | updateRouteDelays = getRouteDelaysBy arch isGlobalNet delayFn (designCells d) (designNets d) ports0
             | otherwise = ports0
         ports2 = walkForward (designCells d) (designNets d) (taDomains tmg) (taTopoOrder tmg) (taSetupOnly tmg) ports1
         ports3 = walkBackward (designCells d) (designNets d) (taDomains tmg) (taTopoOrder tmg) (taSetupOnly tmg) ports2
@@ -409,14 +444,14 @@ setupPortDomains cells nets haveLoops topo ports0 domains0 domToId0 = go True po
                                                 (pA, dA, dtA, _, Just dom) ->
                                                     let pdA = maybe (error "timing: port vanished") id (M.lookup key pA)
                                                         pdA' = pdA{ppArrival = M.insertWith (\_ o -> o) dom emptyArrivReq (ppArrival pdA)}
-                                                        dA' = updDomain dA dom (\dmn -> dmn{pdStartpoints = pdStartpoints dmn ++ [(key, other)]})
+                                                        dA' = updDomain dA dom (\dmn -> dmn{pdStartpoints = poolPush (key, other) (pdStartpoints dmn)})
                                                      in (M.insert key pdA' pA, dA', dtA, upd)
                                                 stA@(pA, dA, dtA, uA, _) -> (pA, dA, dtA, uA)
                                         ArcStartpoint ->
                                             let (pA, dA, dtA, _) = st'
                                                 pdA = maybe (error "timing: port vanished") id (M.lookup key pA)
                                                 pdA' = pdA{ppArrival = M.insertWith (\_ o -> o) asyncDomainId emptyArrivReq (ppArrival pdA)}
-                                                dA' = updDomain dA asyncDomainId (\dmn -> dmn{pdStartpoints = pdStartpoints dmn ++ [(key, emptyId)]})
+                                                dA' = updDomain dA asyncDomainId (\dmn -> dmn{pdStartpoints = poolPush (key, emptyId) (pdStartpoints dmn)})
                                              in (M.insert key pdA' pA, dA', dtA, upd)
                                         _ -> st'
                                 )
@@ -471,14 +506,14 @@ setupPortDomains cells nets haveLoops topo ports0 domains0 domToId0 = go True po
                                                 (pA, dA, dtA, _, Just dom) ->
                                                     let pdA = maybe (error "timing: port vanished") id (M.lookup key pA)
                                                         pdA' = pdA{ppRequired = M.insertWith (\_ o -> o) dom emptyArrivReq (ppRequired pdA)}
-                                                        dA' = updDomain dA dom (\dmn -> dmn{pdEndpoints = pdEndpoints dmn ++ [(key, other)]})
+                                                        dA' = updDomain dA dom (\dmn -> dmn{pdEndpoints = poolPush (key, other) (pdEndpoints dmn)})
                                                      in (M.insert key pdA' pA, dA', dtA, upd)
                                                 stA@(pA, dA, dtA, uA, _) -> (pA, dA, dtA, uA)
                                         ArcEndpoint ->
                                             let (pA, dA, dtA, _) = st'
                                                 pdA = maybe (error "timing: port vanished") id (M.lookup key pA)
                                                 pdA' = pdA{ppRequired = M.insertWith (\_ o -> o) asyncDomainId emptyArrivReq (ppRequired pdA)}
-                                                dA' = updDomain dA asyncDomainId (\dmn -> dmn{pdEndpoints = pdEndpoints dmn ++ [(key, emptyId)]})
+                                                dA' = updDomain dA asyncDomainId (\dmn -> dmn{pdEndpoints = poolPush (key, emptyId) (pdEndpoints dmn)})
                                              in (M.insert key pdA' pA, dA', dtA, upd)
                                         _ -> st'
                                 )
@@ -522,6 +557,9 @@ setupPortDomains cells nets haveLoops topo ports0 domains0 domToId0 = go True po
                             (pd, pairsAcc, ptAcc)
                             [(a, r) | a <- M.keys (ppArrival pd), r <- M.keys (ppRequired pd)]
                  in (M.insert key pd' pAcc, pairsAcc', ptAcc')
+
+    -- pool<Key>::insert: append in insertion order, deduplicated.
+    poolPush x xs = if x `elem` xs then xs else xs ++ [x]
 
     updDomain [] _ _ = error "timing: domain index out of range"
     updDomain (x : xs) 0 f = f x : xs
@@ -620,7 +658,34 @@ getRouteDelays ::
     M.Map IdString (NetInfo (Bel a) (Wire a) (Pip a)) ->
     M.Map CellPortKey PerPort ->
     M.Map CellPortKey PerPort
+-- | The placer-era route delay: @predictDelay@ from the driver's bel pin
+-- to the sink's bel pin (equivalent to the C++ @predictArcDelay@ while
+-- nets are unrouted).
+routeDelayPredict :: Arch a => a -> M.Map IdString (CellInfo (Bel a) (Wire a) (Pip a)) -> NetInfo (Bel a) (Wire a) (Pip a) -> PortRef -> DelayT
+routeDelayPredict arch cells ni u =
+    case prCell (netDriver ni) >>= \c -> M.lookup c cells >>= cellBel of
+        Just srcBel ->
+            case prCell u >>= \c -> M.lookup c cells >>= cellBel of
+                Just dstBel -> predictDelay arch srcBel (prPort (netDriver ni)) dstBel (prPort u)
+                Nothing -> 0
+        Nothing -> 0
+
 getRouteDelays arch isGlobalNet cells nets ports0 =
+    getRouteDelaysBy arch isGlobalNet (routeDelayPredict arch cells) cells nets ports0
+
+-- | @get_route_delays@ with a caller-supplied @net -> user -> delay@
+-- function (mirrors the C++ loop; the delay function stands in for
+-- @ctx->getNetinfoRouteDelay@).
+getRouteDelaysBy ::
+    Arch a =>
+    a ->
+    (NetInfo (Bel a) (Wire a) (Pip a) -> Bool) ->
+    (NetInfo (Bel a) (Wire a) (Pip a) -> PortRef -> DelayT) ->
+    M.Map IdString (CellInfo (Bel a) (Wire a) (Pip a)) ->
+    M.Map IdString (NetInfo (Bel a) (Wire a) (Pip a)) ->
+    M.Map CellPortKey PerPort ->
+    M.Map CellPortKey PerPort
+getRouteDelaysBy _arch isGlobalNet delayFn cells nets ports0 =
     foldl netStep ports0 (reverse (M.keys nets))
   where
     netStep pAcc netId =
@@ -637,12 +702,8 @@ getRouteDelays arch isGlobalNet cells nets ports0 =
         let key = CellPortKey (fromMaybe emptyId (prCell u)) (prPort u)
          in case M.lookup key pAcc of
                 Just pd
-                    | Just dstBel <- prCell u >>= \c -> M.lookup c cells >>= cellBel ->
-                        let delay =
-                                case prCell (netDriver ni) >>= \c -> M.lookup c cells >>= cellBel of
-                                    Just srcBel -> predictDelay arch srcBel (prPort (netDriver ni)) dstBel (prPort u)
-                                    Nothing -> 0
-                            pd' = pd{ppRouteDelay = dpFromDelay delay}
+                    | Just _ <- prCell u >>= \c -> M.lookup c cells >>= cellBel ->
+                        let pd' = pd{ppRouteDelay = dpFromDelay (delayFn ni u)}
                          in M.insert key pd' pAcc
                 _ -> pAcc
 

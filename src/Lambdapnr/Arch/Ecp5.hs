@@ -409,8 +409,10 @@ instance Arch Ecp5 where
      in delayFormula e (abs (dx - sx)) (abs (dy - sy))
   getDelayEpsilon _ = 20
   getRipupDelayPenalty e = fromIntegral (550 - 50 * speedToInt (eaSpeed (e5Args e)))
-  getDelayNS _ v = fromIntegral v * 0.001
-  getDelayFromNS _ ns = fromIntegral (floor (ns * 1000) :: Int)
+  -- ecp5 arch.h:975-976: getDelayNS returns a FLOAT (the double
+  -- multiply rounded to float); getDelayFromNS takes a float.
+  getDelayNS _ v = realToFrac (realToFrac (fromIntegral v * (0.001 :: Double)) :: Float)
+  getDelayFromNS _ ns = fromIntegral (truncate ((realToFrac ns :: Float) * 1000) :: Int)
   getRouteBoundingBox e srcW dstW =
     let (sx, sy) = estLocation e srcW
         (dx, dy) = estLocation e dstW

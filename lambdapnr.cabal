@@ -49,6 +49,7 @@ library
     Lambdapnr.Kernel.Property
     Lambdapnr.Kernel.Timing
     Lambdapnr.Kernel.TimingAnalyser
+    Lambdapnr.Kernel.TimingReport
     Lambdapnr.CLI
   build-depends:
     base >=4.17 && <5,
