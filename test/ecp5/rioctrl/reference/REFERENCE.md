@@ -39,6 +39,7 @@ chipdb-25k.bin). Seed 1, speed grade 6, package CABGA256.
 | Checksum (post-place) | `0x519b603f` (lineage B, with LPF) / `0xf1975059` (lineage A, no LPF) |
 | Checksum (post-route) | `0x728f80cc` (lineage B, with LPF) / `0x94a9ffe1` (lineage A, no LPF) |
 | textcfg (milestone 16) | lambdapnr `--textcfg` output is **byte-identical** to `rioctrl_controller.textcfg` (and to the oracle's `--lpf` output) |
+| timing report (milestone 17) | lambdapnr's post-pack utilisation table, post-place fmax/histogram and post-route critical paths/Fmax/max-delays/slack histogram are **byte-identical** to the oracle on both lineages (Fmax: 69.73/85.62 MHz `crg_clkout`) |
 
 ## Files
 

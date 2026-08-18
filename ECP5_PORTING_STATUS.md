@@ -107,6 +107,7 @@ rioctrl reference design, pass by pass.
 | 14 | Placer: placer1 SA refine — IT1-23 bit-exact, SA breaks at iter 23 exactly like C++; **post-place checksum at parity** (0xf1975059) after porting `fixupHierarchy` interning + `archInfoToAttributes` | 7ef8b5c |
 | 15 | **Router: `route_ecp5_globals` + router1 A* ripup-retry at bit-exact parity** — post-route checksums match on both lineages (0x94a9ffe1 / 0x728f80cc), 32675-arc pop trace identical, per-net wire dumps 0-diff | fd3a5f5 |
 | 16 | **Bitgen textcfg byte-identical to the oracle on both lineages** — permute_lut/CCU2 fix, JTAGG tile lookup, bram INITVAL/init data, PLL dynamic params, EBR/DSP tile groups, FF LSR/CLK null-net case, base-config entry order | a2a74a2 |
+| 17 | **Timing report at byte parity** — post-pack device-utilisation table, post-place fmax/histogram, post-route critical paths/Fmax/max delays/slack histogram and the `Program finished normally.` tail match the oracle byte-for-byte on both lineages | 26571cd |
 
 Working tree is dirty: Placer1.hs (**new** — full placer1 SA refine port), PlacerHeap.hs
 (isBelLocValidE/dspLocationValid exports + restore unbind fix), Main.hs (place1Refine +
@@ -467,5 +468,13 @@ moves.
 5. Update REFERENCE.md's golden pack checksum (0xc76929e2 is the old binary's
    value; the current 0.10-tag oracle reproduces the reference textcfg
    byte-for-byte with post-pack 0x889a4909).
-5. Timing report: Fmax (reference: crg_clkout 69.73/85.62 MHz) — engine is
-   ported; the report format remains.
+5. ~~Timing report~~ **RESOLVED (milestone 17)**: the post-pack utilisation
+   table, the post-place fmax/histogram and the post-route critical paths,
+   per-clock Fmax (incl. the reference `crg_clkout` 69.73/85.62 MHz),
+   cross-domain max delays and slack histogram are byte-identical to the
+   oracle on both lineages. Root causes: `getDelayNS` is a FLOAT in the
+   ECP5 arch (the double multiply rounded to float) — every `%.2f` value
+   depended on it; the histogram double-counted endpoints (the domain
+   start/endpoint lists appended per iteration pass instead of
+   deduplicating like the C++ `pool::insert`); utilisation counts cells
+   by TYPE (`getBelBucketForCellType`), not by bel bindings.
